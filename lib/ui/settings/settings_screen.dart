@@ -203,8 +203,8 @@ class SettingsScreen extends ConsumerWidget {
           _SectionHeader(title: 'About'),
           ListTile(
             leading: const Icon(Icons.info_outline),
-            title: const Text('Shelfy'),
-            subtitle: const Text('v1.0.0 • Built with Flutter & Material 3'),
+            title: const Text('SpineLeaf'),
+            subtitle: const Text('v0.0.1-alpha • Pre-release'),
           ),
           const SizedBox(height: 48),
         ],

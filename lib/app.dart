@@ -13,14 +13,14 @@ final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
 final seedColorProvider = StateProvider<Color>((ref) => const Color(0xFF6750A4));
 final appInitializedProvider = StateProvider<bool>((ref) => false);
 
-class ShelfyApp extends ConsumerStatefulWidget {
-  const ShelfyApp({super.key});
+class SpineLeafApp extends ConsumerStatefulWidget {
+  const SpineLeafApp({super.key});
 
   @override
-  ConsumerState<ShelfyApp> createState() => _ShelfyAppState();
+  ConsumerState<SpineLeafApp> createState() => _SpineLeafAppState();
 }
 
-class _ShelfyAppState extends ConsumerState<ShelfyApp> {
+class _SpineLeafAppState extends ConsumerState<SpineLeafApp> {
   @override
   void initState() {
     super.initState();
@@ -57,7 +57,7 @@ class _ShelfyAppState extends ConsumerState<ShelfyApp> {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Shelfy',
+      title: 'SpineLeaf',
       themeMode: themeMode,
       theme: AppTheme.light(seedColor: seedColor),
       darkTheme: AppTheme.dark(seedColor: seedColor),

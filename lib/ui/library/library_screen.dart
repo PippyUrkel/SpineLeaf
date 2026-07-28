@@ -35,7 +35,7 @@ class LibraryScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Shelfy'),
+        title: const Text('SpineLeaf'),
         actions: [
           // View mode toggle
           IconButton(

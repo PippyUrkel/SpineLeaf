@@ -38,7 +38,7 @@ class StatisticsScreen extends ConsumerWidget {
                     icon: Icons.schedule,
                     title: 'Total Time',
                     value: stats.totalReadingTime.formatted,
-                    subtitle: 'all time',
+                    subtitle: '',
                     color: context.colorScheme.secondary,
                   ),
                 ),
