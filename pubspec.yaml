@@ -26,7 +26,7 @@ dependencies:
   flutter_html: ^3.0.0-beta.2
 
   # File Picking
-  file_picker: ^8.1.7
+  file_picker: ^11.0.2
 
   # Path & Storage
   path_provider: ^2.1.5
