@@ -1,0 +1,358 @@
+import 'package:flutter/material.dart';
+import '../../core/constants.dart';
+
+class Book {
+  final String id;
+  final String title;
+  final String author;
+  final String? description;
+  final String? publisher;
+  final String? isbn;
+  final String? filePath;
+  final String? coverPath;
+  final BookFormat format;
+  final int totalChapters;
+  final DateTime dateAdded;
+  final DateTime? lastOpened;
+  final BookStatus status;
+  final String? fileHash;
+  final int totalWords;
+
+  const Book({
+    required this.id,
+    required this.title,
+    required this.author,
+    this.description,
+    this.publisher,
+    this.isbn,
+    this.filePath,
+    this.coverPath,
+    required this.format,
+    this.totalChapters = 0,
+    required this.dateAdded,
+    this.lastOpened,
+    this.status = BookStatus.unread,
+    this.fileHash,
+    this.totalWords = 0,
+  });
+
+  Book copyWith({
+    String? id,
+    String? title,
+    String? author,
+    String? description,
+    String? publisher,
+    String? isbn,
+    String? filePath,
+    String? coverPath,
+    BookFormat? format,
+    int? totalChapters,
+    DateTime? dateAdded,
+    DateTime? lastOpened,
+    BookStatus? status,
+    String? fileHash,
+    int? totalWords,
+  }) {
+    return Book(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      author: author ?? this.author,
+      description: description ?? this.description,
+      publisher: publisher ?? this.publisher,
+      isbn: isbn ?? this.isbn,
+      filePath: filePath ?? this.filePath,
+      coverPath: coverPath ?? this.coverPath,
+      format: format ?? this.format,
+      totalChapters: totalChapters ?? this.totalChapters,
+      dateAdded: dateAdded ?? this.dateAdded,
+      lastOpened: lastOpened ?? this.lastOpened,
+      status: status ?? this.status,
+      fileHash: fileHash ?? this.fileHash,
+      totalWords: totalWords ?? this.totalWords,
+    );
+  }
+}
+
+class Chapter {
+  final String id;
+  final String bookId;
+  final String title;
+  final int index;
+  final String content;
+  final int wordCount;
+
+  const Chapter({
+    required this.id,
+    required this.bookId,
+    required this.title,
+    required this.index,
+    required this.content,
+    this.wordCount = 0,
+  });
+}
+
+class ReadingProgress {
+  final String bookId;
+  final int currentChapter;
+  final double positionInChapter;
+  final double overallPercent;
+  final int chaptersCompleted;
+  final int totalReadingTimeSeconds;
+  final DateTime? lastReadAt;
+
+  const ReadingProgress({
+    required this.bookId,
+    this.currentChapter = 0,
+    this.positionInChapter = 0.0,
+    this.overallPercent = 0.0,
+    this.chaptersCompleted = 0,
+    this.totalReadingTimeSeconds = 0,
+    this.lastReadAt,
+  });
+
+  ReadingProgress copyWith({
+    String? bookId,
+    int? currentChapter,
+    double? positionInChapter,
+    double? overallPercent,
+    int? chaptersCompleted,
+    int? totalReadingTimeSeconds,
+    DateTime? lastReadAt,
+  }) {
+    return ReadingProgress(
+      bookId: bookId ?? this.bookId,
+      currentChapter: currentChapter ?? this.currentChapter,
+      positionInChapter: positionInChapter ?? this.positionInChapter,
+      overallPercent: overallPercent ?? this.overallPercent,
+      chaptersCompleted: chaptersCompleted ?? this.chaptersCompleted,
+      totalReadingTimeSeconds: totalReadingTimeSeconds ?? this.totalReadingTimeSeconds,
+      lastReadAt: lastReadAt ?? this.lastReadAt,
+    );
+  }
+
+  Duration get totalReadingTime => Duration(seconds: totalReadingTimeSeconds);
+}
+
+class Annotation {
+  final String id;
+  final String bookId;
+  final int chapterIndex;
+  final AnnotationType type;
+  final String? selectedText;
+  final String? note;
+  final Color? highlightColor;
+  final int position;
+  final DateTime createdAt;
+
+  const Annotation({
+    required this.id,
+    required this.bookId,
+    required this.chapterIndex,
+    required this.type,
+    this.selectedText,
+    this.note,
+    this.highlightColor,
+    this.position = 0,
+    required this.createdAt,
+  });
+}
+
+class ReadingSession {
+  final String id;
+  final String bookId;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final int durationSeconds;
+  final int chaptersRead;
+  final int wordsRead;
+
+  const ReadingSession({
+    required this.id,
+    required this.bookId,
+    required this.startedAt,
+    this.endedAt,
+    this.durationSeconds = 0,
+    this.chaptersRead = 0,
+    this.wordsRead = 0,
+  });
+
+  Duration get duration => Duration(seconds: durationSeconds);
+}
+
+class ReaderSettings {
+  final String fontFamily;
+  final double fontSize;
+  final FontWeight fontWeight;
+  final double lineHeight;
+  final double paragraphSpacing;
+  final ReaderTextAlign textAlign;
+  final double margin;
+  final ReadingTheme readingTheme;
+  final bool scrollMode;
+
+  const ReaderSettings({
+    this.fontFamily = 'Literata',
+    this.fontSize = 18.0,
+    this.fontWeight = FontWeight.w400,
+    this.lineHeight = 1.6,
+    this.paragraphSpacing = 12.0,
+    this.textAlign = ReaderTextAlign.left,
+    this.margin = 24.0,
+    this.readingTheme = ReadingTheme.light,
+    this.scrollMode = true,
+  });
+
+  ReaderSettings copyWith({
+    String? fontFamily,
+    double? fontSize,
+    FontWeight? fontWeight,
+    double? lineHeight,
+    double? paragraphSpacing,
+    ReaderTextAlign? textAlign,
+    double? margin,
+    ReadingTheme? readingTheme,
+    bool? scrollMode,
+  }) {
+    return ReaderSettings(
+      fontFamily: fontFamily ?? this.fontFamily,
+      fontSize: fontSize ?? this.fontSize,
+      fontWeight: fontWeight ?? this.fontWeight,
+      lineHeight: lineHeight ?? this.lineHeight,
+      paragraphSpacing: paragraphSpacing ?? this.paragraphSpacing,
+      textAlign: textAlign ?? this.textAlign,
+      margin: margin ?? this.margin,
+      readingTheme: readingTheme ?? this.readingTheme,
+      scrollMode: scrollMode ?? this.scrollMode,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'fontFamily': fontFamily,
+    'fontSize': fontSize,
+    'fontWeightIndex': fontWeight.value,
+    'lineHeight': lineHeight,
+    'paragraphSpacing': paragraphSpacing,
+    'textAlign': textAlign.index,
+    'margin': margin,
+    'readingTheme': readingTheme.index,
+    'scrollMode': scrollMode,
+  };
+
+  factory ReaderSettings.fromJson(Map<String, dynamic> json) {
+    return ReaderSettings(
+      fontFamily: json['fontFamily'] as String? ?? 'Literata',
+      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 18.0,
+      fontWeight: FontWeight.values.firstWhere((w) => w.value == (json['fontWeightIndex'] as int? ?? 400), orElse: () => FontWeight.w400),
+      lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.6,
+      paragraphSpacing: (json['paragraphSpacing'] as num?)?.toDouble() ?? 12.0,
+      textAlign: ReaderTextAlign.values[json['textAlign'] as int? ?? 0],
+      margin: (json['margin'] as num?)?.toDouble() ?? 24.0,
+      readingTheme: ReadingTheme.values[json['readingTheme'] as int? ?? 0],
+      scrollMode: json['scrollMode'] as bool? ?? true,
+    );
+  }
+}
+
+class BookWithProgress {
+  final Book book;
+  final ReadingProgress? progress;
+
+  const BookWithProgress({required this.book, this.progress});
+
+  double get progressPercent => progress?.overallPercent ?? 0.0;
+  bool get isReading => book.status == BookStatus.reading;
+  bool get isCompleted => book.status == BookStatus.completed;
+  bool get isUnread => book.status == BookStatus.unread;
+}
+
+class ReadingStats {
+  final Duration readingTimeToday;
+  final Duration totalReadingTime;
+  final int booksCompleted;
+  final int booksReading;
+  final int totalChaptersRead;
+  final int currentStreak;
+  final List<DailyReading> recentActivity;
+
+  const ReadingStats({
+    this.readingTimeToday = Duration.zero,
+    this.totalReadingTime = Duration.zero,
+    this.booksCompleted = 0,
+    this.booksReading = 0,
+    this.totalChaptersRead = 0,
+    this.currentStreak = 0,
+    this.recentActivity = const [],
+  });
+}
+
+class DailyReading {
+  final DateTime date;
+  final Duration readingTime;
+  final int chaptersRead;
+
+  const DailyReading({
+    required this.date,
+    this.readingTime = Duration.zero,
+    this.chaptersRead = 0,
+  });
+}
+
+class ChapterSummary {
+  final int chapterIndex;
+  final String chapterTitle;
+  final String summary;
+  final List<String> keyPoints;
+  final List<String> characters;
+  final List<String> concepts;
+  final bool isGenerated;
+
+  const ChapterSummary({
+    required this.chapterIndex,
+    required this.chapterTitle,
+    required this.summary,
+    this.keyPoints = const [],
+    this.characters = const [],
+    this.concepts = const [],
+    this.isGenerated = false,
+  });
+}
+
+class DictionaryEntry {
+  final String word;
+  final String? pronunciation;
+  final List<DictionaryDefinition> definitions;
+
+  const DictionaryEntry({
+    required this.word,
+    this.pronunciation,
+    this.definitions = const [],
+  });
+}
+
+class DictionaryDefinition {
+  final String partOfSpeech;
+  final String definition;
+  final String? example;
+
+  const DictionaryDefinition({
+    required this.partOfSpeech,
+    required this.definition,
+    this.example,
+  });
+}
+
+class SearchResult {
+  final String bookId;
+  final int chapterIndex;
+  final String chapterTitle;
+  final String excerpt;
+  final int position;
+
+  const SearchResult({
+    required this.bookId,
+    required this.chapterIndex,
+    required this.chapterTitle,
+    required this.excerpt,
+    this.position = 0,
+  });
+}
