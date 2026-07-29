@@ -32,7 +32,10 @@ class _SpineLeafAppState extends ConsumerState<SpineLeafApp> {
     final prefsRepo = ref.read(preferencesRepositoryProvider);
 
     await prefsRepo.load();
-    DemoDataService.seedDemoData(repo);
+    if (!prefsRepo.hasSeededWelcomeBooklet) {
+      DemoDataService.seedWelcomeBooklet(repo);
+      await prefsRepo.saveWelcomeBookletSeeded(true);
+    }
 
     ref.read(themeModeProvider.notifier).state = prefsRepo.themeMode;
     ref.read(seedColorProvider.notifier).state = prefsRepo.seedColor;

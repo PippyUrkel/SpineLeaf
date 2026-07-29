@@ -83,12 +83,67 @@ class BookRepository {
     final book = getBook(bookId);
     if (book != null) {
       updateBook(book.copyWith(status: status));
+      final chapters = getChapters(bookId);
       if (status == BookStatus.completed) {
         final prog = getProgress(bookId);
-        updateProgress(prog.copyWith(overallPercent: 1.0));
+        final allIndices = Set<int>.from(List.generate(chapters.length, (i) => i));
+        updateProgress(prog.copyWith(
+          overallPercent: 1.0,
+          chaptersCompleted: chapters.length,
+          readChapterIndices: allIndices,
+        ));
       } else if (status == BookStatus.unread) {
         updateProgress(ReadingProgress(bookId: bookId));
       }
+    }
+  }
+
+  void markChaptersRead(String bookId, Iterable<int> chapterIndices) {
+    final chapters = getChapters(bookId);
+    final totalChapters = chapters.isNotEmpty ? chapters.length : 1;
+    final prog = getProgress(bookId);
+    final updatedRead = Set<int>.from(prog.readChapterIndices);
+
+    for (int i = 0; i < prog.chaptersCompleted; i++) {
+      updatedRead.add(i);
+    }
+    updatedRead.addAll(chapterIndices);
+
+    final overallPercent = (updatedRead.length / totalChapters).clamp(0.0, 1.0);
+    updateProgress(prog.copyWith(
+      readChapterIndices: updatedRead,
+      chaptersCompleted: updatedRead.length,
+      overallPercent: overallPercent,
+      lastReadAt: DateTime.now(),
+    ));
+  }
+
+  void markChaptersUnread(String bookId, Iterable<int> chapterIndices) {
+    final chapters = getChapters(bookId);
+    final totalChapters = chapters.isNotEmpty ? chapters.length : 1;
+    final prog = getProgress(bookId);
+    final updatedRead = Set<int>.from(prog.readChapterIndices);
+
+    for (int i = 0; i < prog.chaptersCompleted; i++) {
+      updatedRead.add(i);
+    }
+    updatedRead.removeAll(chapterIndices);
+
+    final overallPercent = (updatedRead.length / totalChapters).clamp(0.0, 1.0);
+    updateProgress(prog.copyWith(
+      readChapterIndices: updatedRead,
+      chaptersCompleted: updatedRead.length,
+      overallPercent: overallPercent,
+      lastReadAt: DateTime.now(),
+    ));
+  }
+
+  void toggleChapterRead(String bookId, int chapterIndex) {
+    final prog = getProgress(bookId);
+    if (prog.isChapterRead(chapterIndex)) {
+      markChaptersUnread(bookId, [chapterIndex]);
+    } else {
+      markChaptersRead(bookId, [chapterIndex]);
     }
   }
 
@@ -304,6 +359,7 @@ class PreferencesRepository {
   static const _settingsKey = 'reader_settings';
   static const _themeModeKey = 'theme_mode';
   static const _colorSeedKey = 'color_seed';
+  static const _welcomeBookletSeededKey = 'has_seeded_welcome_booklet';
 
   ReaderSettings _settings = const ReaderSettings();
   ReaderSettings get settings => _settings;
@@ -313,6 +369,9 @@ class PreferencesRepository {
 
   Color _seedColor = kDefaultSeedColor;
   Color get seedColor => _seedColor;
+
+  bool _hasSeededWelcomeBooklet = false;
+  bool get hasSeededWelcomeBooklet => _hasSeededWelcomeBooklet;
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -336,6 +395,9 @@ class PreferencesRepository {
     if (colorValue != null) {
       _seedColor = Color(colorValue);
     }
+
+    // Welcome booklet flag
+    _hasSeededWelcomeBooklet = prefs.getBool(_welcomeBookletSeededKey) ?? false;
   }
 
   Future<void> saveSettings(ReaderSettings settings) async {
@@ -354,6 +416,12 @@ class PreferencesRepository {
     _seedColor = color;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_colorSeedKey, color.toARGB32());
+  }
+
+  Future<void> saveWelcomeBookletSeeded(bool seeded) async {
+    _hasSeededWelcomeBooklet = seeded;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_welcomeBookletSeededKey, seeded);
   }
 }
 

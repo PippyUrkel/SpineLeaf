@@ -337,7 +337,7 @@ class _ChapterList extends StatelessWidget {
       itemCount: chapters.length,
       itemBuilder: (context, index) {
         final chapter = chapters[index];
-        final isCompleted = index < progress.chaptersCompleted;
+        final isCompleted = progress.isChapterRead(index);
         final isCurrent = index == progress.currentChapter;
 
         return ListTile(
@@ -490,7 +490,7 @@ class _AiSummaryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Only show chapters the user has read
-    final readChapters = chapters.where((c) => c.index < progress.chaptersCompleted).toList();
+    final readChapters = chapters.where((c) => progress.isChapterRead(c.index)).toList();
 
     if (readChapters.isEmpty) {
       return Center(

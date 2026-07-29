@@ -6,24 +6,60 @@ import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
 import '../../data/services/import_service.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/soda_progress.dart';
 
 // Library state providers
 final librarySortProvider = StateProvider<LibrarySort>((ref) => LibrarySort.recentlyRead);
 final libraryFilterProvider = StateProvider<BookStatus?>((ref) => null);
 final librarySearchProvider = StateProvider<String>((ref) => '');
 final libraryViewModeProvider = StateProvider<bool>((ref) => true); // true = grid
+final libraryGridColumnsProvider = StateProvider<int>((ref) => 2); // 2 to 5 columns
 final libraryRefreshProvider = StateProvider<int>((ref) => 0);
 
-class LibraryScreen extends ConsumerWidget {
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  int _initialColsOnScale = 2;
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _initialColsOnScale = ref.read(libraryGridColumnsProvider);
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (details.pointerCount < 2) return;
+
+    // Pinch in (scale < 1.0) -> shrink elements -> INCREASE column count (up to max 5 cols)
+    // Pinch out (scale > 1.0) -> enlarge elements -> DECREASE column count (down to min 2 cols)
+    final scaleDelta = details.scale - 1.0;
+    if (scaleDelta.abs() > 0.15) {
+      int newCols = _initialColsOnScale;
+      if (scaleDelta < -0.15) {
+        // Pinching in: add columns
+        newCols = (_initialColsOnScale + (scaleDelta.abs() * 3).round()).clamp(2, 5);
+      } else if (scaleDelta > 0.15) {
+        // Pinching out: subtract columns
+        newCols = (_initialColsOnScale - (scaleDelta * 3).round()).clamp(2, 5);
+      }
+
+      if (newCols != ref.read(libraryGridColumnsProvider)) {
+        ref.read(libraryGridColumnsProvider.notifier).state = newCols;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final repo = ref.watch(bookRepositoryProvider);
     final sort = ref.watch(librarySortProvider);
     final filter = ref.watch(libraryFilterProvider);
     final search = ref.watch(librarySearchProvider);
     final isGrid = ref.watch(libraryViewModeProvider);
+    final columns = ref.watch(libraryGridColumnsProvider);
     ref.watch(libraryRefreshProvider); // triggers rebuild
 
     final books = repo.getBooksWithProgress(
@@ -37,6 +73,28 @@ class LibraryScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('SpineLeaf'),
         actions: [
+          // Grid column count indicator (when in grid view)
+          if (isGrid)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: context.colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$columns cols',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: context.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           // View mode toggle
           IconButton(
             icon: Icon(isGrid ? Icons.view_list : Icons.grid_view),
@@ -69,158 +127,163 @@ class LibraryScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: [
-          // Search bar
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: SearchBar(
-                hintText: 'Search books...',
-                leading: const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: Icon(Icons.search),
-                ),
-                trailing: search.isNotEmpty
-                    ? [
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            ref.read(librarySearchProvider.notifier).state = '';
-                          },
-                        ),
-                      ]
-                    : null,
-                onChanged: (value) {
-                  ref.read(librarySearchProvider.notifier).state = value;
-                },
-                elevation: const WidgetStatePropertyAll(0),
-                backgroundColor: WidgetStatePropertyAll(
-                  context.colorScheme.surfaceContainerHigh,
+      body: GestureDetector(
+        onScaleStart: isGrid ? _onScaleStart : null,
+        onScaleUpdate: isGrid ? _onScaleUpdate : null,
+        behavior: HitTestBehavior.translucent,
+        child: CustomScrollView(
+          slivers: [
+            // Search bar
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: SearchBar(
+                  hintText: 'Search books...',
+                  leading: const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(Icons.search),
+                  ),
+                  trailing: search.isNotEmpty
+                      ? [
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              ref.read(librarySearchProvider.notifier).state = '';
+                            },
+                          ),
+                        ]
+                      : null,
+                  onChanged: (value) {
+                    ref.read(librarySearchProvider.notifier).state = value;
+                  },
+                  elevation: const WidgetStatePropertyAll(0),
+                  backgroundColor: WidgetStatePropertyAll(
+                    context.colorScheme.surfaceContainerHigh,
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // Filter chips
-          SliverToBoxAdapter(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Row(
-                children: [
-                  _FilterChipWidget(
-                    label: 'All',
-                    selected: filter == null,
-                    onSelected: () {
-                      ref.read(libraryFilterProvider.notifier).state = null;
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ...BookStatus.values.map((status) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: _FilterChipWidget(
-                      label: status.label,
-                      selected: filter == status,
+            // Filter chips
+            SliverToBoxAdapter(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  children: [
+                    _FilterChipWidget(
+                      label: 'All',
+                      selected: filter == null,
                       onSelected: () {
-                        ref.read(libraryFilterProvider.notifier).state = status;
+                        ref.read(libraryFilterProvider.notifier).state = null;
                       },
                     ),
-                  )),
-                ],
-              ),
-            ),
-          ),
-
-          // Continue Reading section
-          if (continueReading != null && search.isEmpty && filter == null)
-            SliverToBoxAdapter(
-              child: _ContinueReadingCard(bookWithProgress: continueReading),
-            ),
-
-          // Section header
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                children: [
-                  Text(
-                    filter != null ? filter.label : 'Your Library',
-                    style: context.textTheme.titleMedium,
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${books.length} books',
-                    style: context.textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Book list/grid
-          if (books.isEmpty)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.library_books_outlined,
-                      size: 64,
-                      color: context.colorScheme.outline,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      search.isNotEmpty ? 'No books found' : 'Your library is empty',
-                      style: context.textTheme.bodyLarge?.copyWith(
-                        color: context.colorScheme.outline,
+                    const SizedBox(width: 8),
+                    ...BookStatus.values.map((status) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _FilterChipWidget(
+                        label: status.label,
+                        selected: filter == status,
+                        onSelected: () {
+                          ref.read(libraryFilterProvider.notifier).state = status;
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                    )),
+                  ],
+                ),
+              ),
+            ),
+
+            // Continue Reading section
+            if (continueReading != null && search.isEmpty && filter == null)
+              SliverToBoxAdapter(
+                child: _ContinueReadingCard(bookWithProgress: continueReading),
+              ),
+
+            // Section header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  children: [
                     Text(
-                      'Tap + to import a book',
+                      filter != null ? filter.label : 'Your Library',
+                      style: context.textTheme.titleMedium,
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${books.length} books',
                       style: context.textTheme.bodySmall,
                     ),
                   ],
                 ),
               ),
-            )
-          else if (isGrid)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverGrid(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _BookGridCard(
-                    bookWithProgress: books[index],
-                    onRefresh: () => ref.read(libraryRefreshProvider.notifier).state++,
-                  ),
-                  childCount: books.length,
-                ),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 200,
-                  childAspectRatio: 0.52,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _BookListTile(
-                    bookWithProgress: books[index],
-                    onRefresh: () => ref.read(libraryRefreshProvider.notifier).state++,
-                  ),
-                  childCount: books.length,
-                ),
-              ),
             ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 88)),
-        ],
+            // Book list/grid
+            if (books.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.library_books_outlined,
+                        size: 64,
+                        color: context.colorScheme.outline,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        search.isNotEmpty ? 'No books found' : 'Your library is empty',
+                        style: context.textTheme.bodyLarge?.copyWith(
+                          color: context.colorScheme.outline,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Tap + to import a book',
+                        style: context.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (isGrid)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverGrid(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _BookGridCard(
+                      bookWithProgress: books[index],
+                      onRefresh: () => ref.read(libraryRefreshProvider.notifier).state++,
+                    ),
+                    childCount: books.length,
+                  ),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns.clamp(2, 5),
+                    childAspectRatio: columns >= 4 ? 0.48 : 0.54,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _BookListTile(
+                      bookWithProgress: books[index],
+                      onRefresh: () => ref.read(libraryRefreshProvider.notifier).state++,
+                    ),
+                    childCount: books.length,
+                  ),
+                ),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 88)),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showImportDialog(context, ref),
@@ -238,8 +301,7 @@ class LibraryScreen extends ConsumerWidget {
         title: const Text('Import Book'),
         content: const Text(
           'Import e-books from your device storage.\n\n'
-          'Supported formats: EPUB, TXT, Markdown, HTML\n\n'
-          'This feature requires the file_picker package to be configured for your platform.',
+          'Supported formats: EPUB, PDF, RTF, TXT, Markdown',
         ),
         actions: [
           TextButton(
@@ -324,11 +386,12 @@ class _ContinueReadingCard extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Book cover
+                // Book cover (Category 1 or 2)
                 BookCoverWidget(
                   title: book.title,
                   author: book.author,
                   bookId: book.id,
+                  coverPath: book.coverPath,
                   width: 72,
                   height: 108,
                 ),
@@ -371,25 +434,32 @@ class _ContinueReadingCard extends ConsumerWidget {
                         ),
                       ],
                       const SizedBox(height: 8),
-                      // Progress bar
+                      // Soda level progress indicator
                       Row(
                         children: [
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: bookWithProgress.progressPercent,
-                                minHeight: 6,
-                                backgroundColor: context.colorScheme.surfaceContainerHighest,
-                              ),
-                            ),
+                          SodaProgressIndicator(
+                            progress: bookWithProgress.progressPercent,
+                            width: 24,
+                            height: 38,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            bookWithProgress.progressPercent.asPercent,
-                            style: context.textTheme.labelSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                bookWithProgress.progressPercent.asPercent,
+                                style: context.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: context.colorScheme.primary,
+                                ),
+                              ),
+                              Text(
+                                'Completed',
+                                style: context.textTheme.labelSmall?.copyWith(
+                                  color: context.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -442,55 +512,25 @@ class _BookGridCard extends StatelessWidget {
                   title: book.title,
                   author: book.author,
                   bookId: book.id,
+                  coverPath: book.coverPath,
                   width: double.infinity,
                 ),
-                // Status badge
+                // Soda fill level badge
                 if (book.status != BookStatus.unread)
                   Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: book.status == BookStatus.completed
-                            ? Colors.green.withValues(alpha: 0.9)
-                            : context.colorScheme.primaryContainer.withValues(alpha: 0.9),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        book.status == BookStatus.completed
-                            ? '✓'
-                            : bookWithProgress.progressPercent.asPercent,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: book.status == BookStatus.completed
-                              ? Colors.white
-                              : context.colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
-                  ),
-                // Progress bar at bottom of cover
-                if (bookWithProgress.progressPercent > 0 && book.status != BookStatus.completed)
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
-                      child: LinearProgressIndicator(
-                        value: bookWithProgress.progressPercent,
-                        minHeight: 3,
-                        backgroundColor: Colors.transparent,
-                        color: context.colorScheme.primary,
-                      ),
+                    bottom: 8,
+                    right: 8,
+                    child: SodaProgressIndicator(
+                      progress: bookWithProgress.progressPercent,
+                      width: 22,
+                      height: 36,
+                      showPercentText: true,
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           // Title
           Text(
             book.title,
@@ -553,6 +593,7 @@ class _BookListTile extends StatelessWidget {
                 title: book.title,
                 author: book.author,
                 bookId: book.id,
+                coverPath: book.coverPath,
                 width: 56,
                 height: 84,
               ),
@@ -571,32 +612,29 @@ class _BookListTile extends StatelessWidget {
                       book.author,
                       style: context.textTheme.bodySmall,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(2),
-                            child: LinearProgressIndicator(
-                              value: bookWithProgress.progressPercent,
-                              minHeight: 4,
-                              backgroundColor: context.colorScheme.surfaceContainerHighest,
-                            ),
-                          ),
+                        SodaProgressIndicator(
+                          progress: bookWithProgress.progressPercent,
+                          width: 18,
+                          height: 28,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           bookWithProgress.progressPercent.asPercent,
-                          style: context.textTheme.labelSmall,
+                          style: context.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '• ${book.totalChapters} chapters',
+                          style: context.textTheme.labelSmall?.copyWith(
+                            color: context.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${book.totalChapters} chapters • ${book.status.label}',
-                      style: context.textTheme.labelSmall?.copyWith(
-                        color: context.colorScheme.onSurfaceVariant,
-                      ),
                     ),
                   ],
                 ),

@@ -97,6 +97,7 @@ class ReadingProgress {
   final double positionInChapter;
   final double overallPercent;
   final int chaptersCompleted;
+  final Set<int> readChapterIndices;
   final int totalReadingTimeSeconds;
   final DateTime? lastReadAt;
 
@@ -106,9 +107,14 @@ class ReadingProgress {
     this.positionInChapter = 0.0,
     this.overallPercent = 0.0,
     this.chaptersCompleted = 0,
+    this.readChapterIndices = const {},
     this.totalReadingTimeSeconds = 0,
     this.lastReadAt,
   });
+
+  bool isChapterRead(int chapterIndex) {
+    return readChapterIndices.contains(chapterIndex) || chapterIndex < chaptersCompleted;
+  }
 
   ReadingProgress copyWith({
     String? bookId,
@@ -116,6 +122,7 @@ class ReadingProgress {
     double? positionInChapter,
     double? overallPercent,
     int? chaptersCompleted,
+    Set<int>? readChapterIndices,
     int? totalReadingTimeSeconds,
     DateTime? lastReadAt,
   }) {
@@ -125,8 +132,33 @@ class ReadingProgress {
       positionInChapter: positionInChapter ?? this.positionInChapter,
       overallPercent: overallPercent ?? this.overallPercent,
       chaptersCompleted: chaptersCompleted ?? this.chaptersCompleted,
+      readChapterIndices: readChapterIndices ?? this.readChapterIndices,
       totalReadingTimeSeconds: totalReadingTimeSeconds ?? this.totalReadingTimeSeconds,
       lastReadAt: lastReadAt ?? this.lastReadAt,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'bookId': bookId,
+    'currentChapter': currentChapter,
+    'positionInChapter': positionInChapter,
+    'overallPercent': overallPercent,
+    'chaptersCompleted': chaptersCompleted,
+    'readChapterIndices': readChapterIndices.toList(),
+    'totalReadingTimeSeconds': totalReadingTimeSeconds,
+    'lastReadAt': lastReadAt?.toIso8601String(),
+  };
+
+  factory ReadingProgress.fromJson(Map<String, dynamic> json) {
+    return ReadingProgress(
+      bookId: json['bookId'] as String? ?? '',
+      currentChapter: json['currentChapter'] as int? ?? 0,
+      positionInChapter: (json['positionInChapter'] as num?)?.toDouble() ?? 0.0,
+      overallPercent: (json['overallPercent'] as num?)?.toDouble() ?? 0.0,
+      chaptersCompleted: json['chaptersCompleted'] as int? ?? 0,
+      readChapterIndices: (json['readChapterIndices'] as List<dynamic>?)?.cast<int>().toSet() ?? const {},
+      totalReadingTimeSeconds: json['totalReadingTimeSeconds'] as int? ?? 0,
+      lastReadAt: json['lastReadAt'] != null ? DateTime.tryParse(json['lastReadAt'] as String) : null,
     );
   }
 

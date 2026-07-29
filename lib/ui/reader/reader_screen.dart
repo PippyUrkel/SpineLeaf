@@ -83,14 +83,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (chapters.isEmpty) return;
 
     final progress = repo.getProgress(widget.bookId);
-    final overallPercent = chapters.isNotEmpty
-        ? (_currentChapter + 1) / chapters.length
-        : 0.0;
+
+    // Automatically include the current chapter in readChapterIndices
+    final updatedRead = Set<int>.from(progress.readChapterIndices)..add(_currentChapter);
+    for (int i = 0; i < progress.chaptersCompleted; i++) {
+      updatedRead.add(i);
+    }
+
+    final totalPages = _paginatedChapter?.pageCount ?? 1;
+    final pagePosition = totalPages > 0 ? (_currentPage / totalPages).clamp(0.0, 1.0) : 0.0;
+
+    final overallPercent = _calculateProgress(chapters, ref.read(preferencesRepositoryProvider).settings);
 
     repo.updateProgress(progress.copyWith(
       currentChapter: _currentChapter,
+      positionInChapter: pagePosition,
       overallPercent: overallPercent.clamp(0.0, 1.0),
-      chaptersCompleted: _currentChapter,
+      chaptersCompleted: updatedRead.length,
+      readChapterIndices: updatedRead,
       totalReadingTimeSeconds: progress.totalReadingTimeSeconds + _sessionSeconds,
       lastReadAt: DateTime.now(),
     ));
@@ -130,6 +140,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final repo = ref.read(bookRepositoryProvider);
     final chapters = repo.getChapters(widget.bookId);
     if (index >= 0 && index < chapters.length) {
+      _saveProgress();
       setState(() {
         _currentChapter = index;
         _currentPage = 0;
@@ -139,6 +150,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _scrollController.jumpTo(0);
         }
       });
+      _saveProgress();
     }
   }
 
@@ -150,6 +162,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       setState(() {
         _currentPage = clampedPage;
       });
+      _saveProgress();
     }
   }
 
@@ -204,58 +217,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _showTableOfContents() {
-    final repo = ref.read(bookRepositoryProvider);
-    final chapters = repo.getChapters(widget.bookId);
-
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Table of Contents',
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: chapters.length,
-                itemBuilder: (ctx, index) {
-                  final chapter = chapters[index];
-                  final isCurrent = index == _currentChapter;
-                  return ListTile(
-                    leading: CircleAvatar(
-                      radius: 14,
-                      backgroundColor: isCurrent
-                          ? Theme.of(ctx).colorScheme.primary
-                          : Theme.of(ctx).colorScheme.surfaceContainerHigh,
-                      child: Text(
-                        '${index + 1}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isCurrent
-                              ? Theme.of(ctx).colorScheme.onPrimary
-                              : Theme.of(ctx).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      chapter.title,
-                      style: TextStyle(
-                        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    selected: isCurrent,
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _goToChapter(index);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+      isScrollControlled: true,
+      builder: (context) => _TableOfContentsSheet(
+        bookId: widget.bookId,
+        currentChapter: _currentChapter,
+        onSelectChapter: (index) => _goToChapter(index),
       ),
     );
   }
@@ -692,6 +660,35 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
 
         final totalPages = _paginatedChapter!.pageCount;
+
+        // If _currentPage >= totalPages, render Interstitial Black Filler Page!
+        if (_currentPage >= totalPages) {
+          return GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTapUp: (details) {
+              final screenWidth = constraints.maxWidth;
+              final tapX = details.localPosition.dx;
+              final leftThird = screenWidth / 3;
+              final rightThird = screenWidth * 2 / 3;
+
+              if (tapX < leftThird) {
+                _previousPage();
+              } else if (tapX > rightThird) {
+                _nextPage();
+              }
+            },
+            onHorizontalDragEnd: (details) {
+              final velocity = details.primaryVelocity ?? 0;
+              if (velocity < -200) {
+                _nextPage();
+              } else if (velocity > 200) {
+                _previousPage();
+              }
+            },
+            child: _buildInterstitialPage(chapters, readingTheme),
+          );
+        }
+
         final page = _paginatedChapter!.pages[_currentPage.clamp(0, totalPages - 1)];
 
         return GestureDetector(
@@ -769,6 +766,119 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           ),
         );
       },
+    );
+  }
+
+  // ─── Interstitial Chapter Transition Page ────────────────────────────
+
+  Widget _buildInterstitialPage(List<Chapter> chapters, ReadingTheme readingTheme) {
+    final currentChapterObj = chapters[_currentChapter.clamp(0, chapters.length - 1)];
+    final hasNext = _currentChapter < chapters.length - 1;
+    final nextChapterObj = hasNext ? chapters[_currentChapter + 1] : null;
+
+    return Container(
+      color: Colors.black,
+      width: double.infinity,
+      height: double.infinity,
+      padding: const EdgeInsets.all(32),
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.green.withValues(alpha: 0.15),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.4), width: 2),
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline,
+                  color: Colors.greenAccent,
+                  size: 48,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'CHAPTER COMPLETE',
+                style: TextStyle(
+                  color: Colors.greenAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2.0,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                currentChapterObj.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 28),
+              Divider(color: Colors.white.withValues(alpha: 0.2), indent: 40, endIndent: 40),
+              const SizedBox(height: 28),
+              if (hasNext && nextChapterObj != null) ...[
+                Text(
+                  'UP NEXT',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Chapter ${_currentChapter + 2}: ${nextChapterObj.title}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                FilledButton.icon(
+                  onPressed: () => _goToChapter(_currentChapter + 1),
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text('Start Next Chapter'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  ),
+                ),
+              ] else ...[
+                const Text(
+                  '🎉 Congratulations!',
+                  style: TextStyle(
+                    color: Colors.amberAccent,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'You have completed this entire book.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.library_books),
+                  label: const Text('Back to Library'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1281,6 +1391,253 @@ class _SettingsSlider extends StatelessWidget {
             onChanged: onChanged,
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Table of Contents Sheet ──────────────────────────────────────────
+
+class _TableOfContentsSheet extends ConsumerStatefulWidget {
+  final String bookId;
+  final int currentChapter;
+  final void Function(int chapterIndex) onSelectChapter;
+
+  const _TableOfContentsSheet({
+    required this.bookId,
+    required this.currentChapter,
+    required this.onSelectChapter,
+  });
+
+  @override
+  ConsumerState<_TableOfContentsSheet> createState() => _TableOfContentsSheetState();
+}
+
+class _TableOfContentsSheetState extends ConsumerState<_TableOfContentsSheet> {
+  bool _isSelectionMode = false;
+  final Set<int> _selectedIndices = {};
+
+  void _toggleSelection(int index) {
+    setState(() {
+      if (_selectedIndices.contains(index)) {
+        _selectedIndices.remove(index);
+        if (_selectedIndices.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedIndices.add(index);
+      }
+    });
+  }
+
+  void _startSelectionMode(int initialIndex) {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedIndices.add(initialIndex);
+    });
+  }
+
+  void _selectAll(int totalChapters) {
+    setState(() {
+      _selectedIndices.addAll(List.generate(totalChapters, (i) => i));
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIndices.clear();
+      _isSelectionMode = false;
+    });
+  }
+
+  void _batchMarkRead() {
+    final repo = ref.read(bookRepositoryProvider);
+    repo.markChaptersRead(widget.bookId, _selectedIndices);
+    _clearSelection();
+  }
+
+  void _batchMarkUnread() {
+    final repo = ref.read(bookRepositoryProvider);
+    repo.markChaptersUnread(widget.bookId, _selectedIndices);
+    _clearSelection();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.watch(bookRepositoryProvider);
+    final chapters = repo.getChapters(widget.bookId);
+    final progress = repo.getProgress(widget.bookId);
+    final theme = Theme.of(context);
+
+    return SafeArea(
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                width: 32,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // Header
+            if (_isSelectionMode)
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: _clearSelection,
+                  ),
+                  Text(
+                    '${_selectedIndices.length} selected',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () {
+                      if (_selectedIndices.length == chapters.length) {
+                        _clearSelection();
+                      } else {
+                        _selectAll(chapters.length);
+                      }
+                    },
+                    child: Text(_selectedIndices.length == chapters.length ? 'Deselect All' : 'Select All'),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.check_circle_outline),
+                    tooltip: 'Mark Selected as Read',
+                    onPressed: _selectedIndices.isNotEmpty ? _batchMarkRead : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.highlight_off),
+                    tooltip: 'Mark Selected as Unread',
+                    onPressed: _selectedIndices.isNotEmpty ? _batchMarkUnread : null,
+                  ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  const SizedBox(width: 48),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'Table of Contents',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            const Divider(),
+
+            // Chapters list
+            Expanded(
+              child: ListView.builder(
+                itemCount: chapters.length,
+                itemBuilder: (ctx, index) {
+                  final chapter = chapters[index];
+                  final isCurrent = index == widget.currentChapter;
+                  final isRead = progress.isChapterRead(index);
+                  final isSelected = _selectedIndices.contains(index);
+
+                  // Read chapters are greyed out
+                  final textColor = isRead
+                      ? theme.colorScheme.onSurface.withValues(alpha: 0.45)
+                      : theme.colorScheme.onSurface;
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    leading: _isSelectionMode
+                        ? Checkbox(
+                            value: isSelected,
+                            onChanged: (_) => _toggleSelection(index),
+                          )
+                        : CircleAvatar(
+                            radius: 14,
+                            backgroundColor: isCurrent
+                                ? theme.colorScheme.primary
+                                : isRead
+                                    ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                                    : theme.colorScheme.surfaceContainerHigh,
+                            child: isRead && !isCurrent
+                                ? Icon(Icons.check, size: 14, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5))
+                                : Text(
+                                    '${index + 1}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isCurrent
+                                          ? theme.colorScheme.onPrimary
+                                          : textColor,
+                                    ),
+                                  ),
+                          ),
+                    title: Text(
+                      chapter.title,
+                      style: TextStyle(
+                        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                        color: textColor,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${chapter.wordCount} words',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: textColor.withValues(alpha: isRead ? 0.35 : 0.6),
+                      ),
+                    ),
+                    trailing: _isSelectionMode
+                        ? null
+                        : IconButton(
+                            icon: Icon(
+                              isRead ? Icons.check_circle : Icons.radio_button_unchecked,
+                              color: isRead
+                                  ? theme.colorScheme.primary.withValues(alpha: 0.5)
+                                  : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                              size: 20,
+                            ),
+                            tooltip: isRead ? 'Mark as Unread' : 'Mark as Read',
+                            onPressed: () {
+                              repo.toggleChapterRead(widget.bookId, index);
+                            },
+                          ),
+                    selected: isSelected || (isCurrent && !_isSelectionMode),
+                    onTap: () {
+                      if (_isSelectionMode) {
+                        _toggleSelection(index);
+                      } else {
+                        Navigator.pop(ctx);
+                        widget.onSelectChapter(index);
+                      }
+                    },
+                    onLongPress: () {
+                      if (!_isSelectionMode) {
+                        _startSelectionMode(index);
+                      } else {
+                        _toggleSelection(index);
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

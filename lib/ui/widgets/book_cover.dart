@@ -1,10 +1,16 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
-/// Generates a visually appealing book cover using the book's metadata
+/// Renders book covers categorized into 2 types:
+/// Type 1: Image of the first page / cover if available.
+/// Type 2: Default stylized Material 3 cover with title & author if no image available.
 class BookCoverWidget extends StatelessWidget {
   final String title;
   final String author;
   final String bookId;
+  final String? coverPath;
+  final Uint8List? coverImageData;
   final double? width;
   final double? height;
 
@@ -13,17 +19,96 @@ class BookCoverWidget extends StatelessWidget {
     required this.title,
     required this.author,
     required this.bookId,
+    this.coverPath,
+    this.coverImageData,
     this.width,
     this.height,
   });
 
   @override
   Widget build(BuildContext context) {
+    final computedHeight = height ?? (width != null ? width! / 0.67 : null);
+
+    // Type 1: Check if cover image is provided as bytes
+    if (coverImageData != null && coverImageData!.isNotEmpty) {
+      return _buildImageCover(Image.memory(coverImageData!, fit: BoxFit.cover), computedHeight);
+    }
+
+    // Type 1: Check if cover image is provided as a file path that exists
+    if (coverPath != null && coverPath!.isNotEmpty) {
+      final file = File(coverPath!);
+      if (file.existsSync()) {
+        return _buildImageCover(Image.file(file, fit: BoxFit.cover), computedHeight);
+      }
+    }
+
+    // Type 2: Default stylized cover page
+    return _buildDefaultStylizedCover(context, computedHeight);
+  }
+
+  /// Builds a Type 1 cover image container with book frame shadows and spine detail.
+  Widget _buildImageCover(Widget imageWidget, double? computedHeight) {
+    return Container(
+      width: width,
+      height: computedHeight,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 8,
+            offset: const Offset(2, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // First page / cover image
+          imageWidget,
+
+          // Spine overlay
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 5,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withValues(alpha: 0.4),
+                    Colors.black.withValues(alpha: 0.1),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Inner frame border
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+                width: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds a Type 2 default cover page using book metadata and vibrant gradients.
+  Widget _buildDefaultStylizedCover(BuildContext context, double? computedHeight) {
     final coverColors = _getCoverColors(bookId);
 
     return Container(
       width: width,
-      height: height ?? (width != null ? width! / 0.67 : null),
+      height: computedHeight,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         gradient: LinearGradient(
