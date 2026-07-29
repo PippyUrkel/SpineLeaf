@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../domain/parsers/document_parser.dart';
 import '../repositories/repositories.dart';
@@ -51,15 +52,31 @@ class ImportService {
       };
 
       final file = File(path);
-      final parsedBook = await parser.parse(file);
 
-      _bookRepository.addBook(parsedBook.book);
+      // Copy source file to app's persistent documents directory
+      final appDir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${appDir.path}/books');
+      if (!await booksDir.exists()) {
+        await booksDir.create(recursive: true);
+      }
+
+      final ext = extension ?? 'bin';
+      final fileName = 'book_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final persistentFile = await file.copy('${booksDir.path}/$fileName');
+
+      final parsedBook = await parser.parse(persistentFile);
+
+      // Save persistent path on book model
+      final finalBook = parsedBook.book.copyWith(
+        filePath: persistentFile.path,
+      );
+
+      _bookRepository.addBook(finalBook);
       _bookRepository.addChapters(
-        parsedBook.book.id,
+        finalBook.id,
         parsedBook.chapters,
       );
     } catch (e) {
-      // TODO: Replace with application logging/error handling.
       // ignore: avoid_print
       print('Error importing book: $e');
       rethrow;

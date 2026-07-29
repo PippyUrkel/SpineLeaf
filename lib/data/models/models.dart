@@ -71,6 +71,44 @@ class Book {
       totalWords: totalWords ?? this.totalWords,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'author': author,
+    'description': description,
+    'publisher': publisher,
+    'isbn': isbn,
+    'filePath': filePath,
+    'coverPath': coverPath,
+    'format': format.index,
+    'totalChapters': totalChapters,
+    'dateAdded': dateAdded.toIso8601String(),
+    'lastOpened': lastOpened?.toIso8601String(),
+    'status': status.index,
+    'fileHash': fileHash,
+    'totalWords': totalWords,
+  };
+
+  factory Book.fromJson(Map<String, dynamic> json) {
+    return Book(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      author: json['author'] as String,
+      description: json['description'] as String?,
+      publisher: json['publisher'] as String?,
+      isbn: json['isbn'] as String?,
+      filePath: json['filePath'] as String?,
+      coverPath: json['coverPath'] as String?,
+      format: BookFormat.values[(json['format'] as int? ?? 0).clamp(0, BookFormat.values.length - 1)],
+      totalChapters: json['totalChapters'] as int? ?? 0,
+      dateAdded: DateTime.tryParse(json['dateAdded'] as String? ?? '') ?? DateTime.now(),
+      lastOpened: json['lastOpened'] != null ? DateTime.tryParse(json['lastOpened'] as String) : null,
+      status: BookStatus.values[(json['status'] as int? ?? 0).clamp(0, BookStatus.values.length - 1)],
+      fileHash: json['fileHash'] as String?,
+      totalWords: json['totalWords'] as int? ?? 0,
+    );
+  }
 }
 
 class Chapter {
@@ -89,6 +127,26 @@ class Chapter {
     required this.content,
     this.wordCount = 0,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'bookId': bookId,
+    'title': title,
+    'index': index,
+    'content': content,
+    'wordCount': wordCount,
+  };
+
+  factory Chapter.fromJson(Map<String, dynamic> json) {
+    return Chapter(
+      id: json['id'] as String? ?? '',
+      bookId: json['bookId'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      index: json['index'] as int? ?? 0,
+      content: json['content'] as String? ?? '',
+      wordCount: json['wordCount'] as int? ?? 0,
+    );
+  }
 }
 
 class ReadingProgress {
@@ -187,6 +245,32 @@ class Annotation {
     this.position = 0,
     required this.createdAt,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'bookId': bookId,
+    'chapterIndex': chapterIndex,
+    'type': type.index,
+    'selectedText': selectedText,
+    'note': note,
+    'highlightColor': highlightColor?.toARGB32(),
+    'position': position,
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  factory Annotation.fromJson(Map<String, dynamic> json) {
+    return Annotation(
+      id: json['id'] as String? ?? '',
+      bookId: json['bookId'] as String? ?? '',
+      chapterIndex: json['chapterIndex'] as int? ?? 0,
+      type: AnnotationType.values[(json['type'] as int? ?? 0).clamp(0, AnnotationType.values.length - 1)],
+      selectedText: json['selectedText'] as String?,
+      note: json['note'] as String?,
+      highlightColor: json['highlightColor'] != null ? Color(json['highlightColor'] as int) : null,
+      position: json['position'] as int? ?? 0,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
 }
 
 class ReadingSession {
@@ -207,6 +291,28 @@ class ReadingSession {
     this.chaptersRead = 0,
     this.wordsRead = 0,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'bookId': bookId,
+    'startedAt': startedAt.toIso8601String(),
+    'endedAt': endedAt?.toIso8601String(),
+    'durationSeconds': durationSeconds,
+    'chaptersRead': chaptersRead,
+    'wordsRead': wordsRead,
+  };
+
+  factory ReadingSession.fromJson(Map<String, dynamic> json) {
+    return ReadingSession(
+      id: json['id'] as String? ?? '',
+      bookId: json['bookId'] as String? ?? '',
+      startedAt: DateTime.tryParse(json['startedAt'] as String? ?? '') ?? DateTime.now(),
+      endedAt: json['endedAt'] != null ? DateTime.tryParse(json['endedAt'] as String) : null,
+      durationSeconds: json['durationSeconds'] as int? ?? 0,
+      chaptersRead: json['chaptersRead'] as int? ?? 0,
+      wordsRead: json['wordsRead'] as int? ?? 0,
+    );
+  }
 
   Duration get duration => Duration(seconds: durationSeconds);
 }

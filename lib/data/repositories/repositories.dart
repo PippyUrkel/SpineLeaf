@@ -1,34 +1,145 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../../core/constants.dart';
 
-/// In-memory book repository with SharedPreferences persistence for progress
+/// Book repository with JSON file persistence for books, chapters, progress, annotations, and sessions
 class BookRepository {
   final List<Book> _books = [];
   final Map<String, List<Chapter>> _chapters = {};
   final Map<String, ReadingProgress> _progress = {};
   final List<Annotation> _annotations = [];
   final List<ReadingSession> _sessions = [];
+  bool _loaded = false;
 
   List<Book> get allBooks => List.unmodifiable(_books);
 
+  Future<Directory> _getAppDir() async {
+    return await getApplicationDocumentsDirectory();
+  }
+
+  Future<void> load() async {
+    if (_loaded) return;
+    try {
+      final appDir = await _getAppDir();
+
+      // Load Books
+      final booksFile = File('${appDir.path}/spineleaf_books.json');
+      if (await booksFile.exists()) {
+        final content = await booksFile.readAsString();
+        final List<dynamic> list = jsonDecode(content);
+        _books.clear();
+        for (final item in list) {
+          _books.add(Book.fromJson(item as Map<String, dynamic>));
+        }
+      }
+
+      // Load Chapters for each book
+      for (final book in _books) {
+        final chaptersFile = File('${appDir.path}/chapters_${book.id}.json');
+        if (await chaptersFile.exists()) {
+          final content = await chaptersFile.readAsString();
+          final List<dynamic> list = jsonDecode(content);
+          final chaptersList = list.map((c) => Chapter.fromJson(c as Map<String, dynamic>)).toList();
+          _chapters[book.id] = chaptersList;
+        }
+      }
+
+      // Load Progress
+      final progressFile = File('${appDir.path}/spineleaf_progress.json');
+      if (await progressFile.exists()) {
+        final content = await progressFile.readAsString();
+        final Map<String, dynamic> map = jsonDecode(content);
+        _progress.clear();
+        map.forEach((key, val) {
+          _progress[key] = ReadingProgress.fromJson(val as Map<String, dynamic>);
+        });
+      }
+
+      // Load Annotations
+      final annotationsFile = File('${appDir.path}/spineleaf_annotations.json');
+      if (await annotationsFile.exists()) {
+        final content = await annotationsFile.readAsString();
+        final List<dynamic> list = jsonDecode(content);
+        _annotations.clear();
+        for (final item in list) {
+          _annotations.add(Annotation.fromJson(item as Map<String, dynamic>));
+        }
+      }
+
+      // Load Sessions
+      final sessionsFile = File('${appDir.path}/spineleaf_sessions.json');
+      if (await sessionsFile.exists()) {
+        final content = await sessionsFile.readAsString();
+        final List<dynamic> list = jsonDecode(content);
+        _sessions.clear();
+        for (final item in list) {
+          _sessions.add(ReadingSession.fromJson(item as Map<String, dynamic>));
+        }
+      }
+
+      _loaded = true;
+    } catch (_) {}
+  }
+
+  Future<void> saveToDisk() async {
+    try {
+      final appDir = await _getAppDir();
+
+      // Save Books
+      final booksFile = File('${appDir.path}/spineleaf_books.json');
+      await booksFile.writeAsString(jsonEncode(_books.map((b) => b.toJson()).toList()));
+
+      // Save Progress
+      final progressFile = File('${appDir.path}/spineleaf_progress.json');
+      final progressMap = _progress.map((k, v) => MapEntry(k, v.toJson()));
+      await progressFile.writeAsString(jsonEncode(progressMap));
+
+      // Save Annotations
+      final annotationsFile = File('${appDir.path}/spineleaf_annotations.json');
+      await annotationsFile.writeAsString(jsonEncode(_annotations.map((a) => a.toJson()).toList()));
+
+      // Save Sessions
+      final sessionsFile = File('${appDir.path}/spineleaf_sessions.json');
+      await sessionsFile.writeAsString(jsonEncode(_sessions.map((s) => s.toJson()).toList()));
+    } catch (_) {}
+  }
+
   void addBook(Book book) {
+    _books.removeWhere((b) => b.id == book.id);
     _books.add(book);
+    saveToDisk();
   }
 
-  void addChapters(String bookId, List<Chapter> chapters) {
+  void addChapters(String bookId, List<Chapter> chapters) async {
     _chapters[bookId] = chapters;
+    try {
+      final appDir = await _getAppDir();
+      final chaptersFile = File('${appDir.path}/chapters_$bookId.json');
+      await chaptersFile.writeAsString(jsonEncode(chapters.map((c) => c.toJson()).toList()));
+    } catch (_) {}
   }
 
-  void removeBook(String bookId) {
+  void removeBook(String bookId) async {
     _books.removeWhere((b) => b.id == bookId);
     _chapters.remove(bookId);
     _progress.remove(bookId);
     _annotations.removeWhere((a) => a.bookId == bookId);
     _sessions.removeWhere((s) => s.bookId == bookId);
+
+    try {
+      final appDir = await _getAppDir();
+      final chaptersFile = File('${appDir.path}/chapters_$bookId.json');
+      if (await chaptersFile.exists()) {
+        await chaptersFile.delete();
+      }
+    } catch (_) {}
+
+    saveToDisk();
   }
 
   Book? getBook(String bookId) {
@@ -42,6 +153,7 @@ class BookRepository {
   void updateBook(Book book) {
     final index = _books.indexWhere((b) => b.id == book.id);
     if (index >= 0) _books[index] = book;
+    saveToDisk();
   }
 
   List<Chapter> getChapters(String bookId) {
@@ -59,6 +171,10 @@ class BookRepository {
     return _progress[bookId] ?? ReadingProgress(bookId: bookId);
   }
 
+  void saveProgress(ReadingProgress progress) {
+    updateProgress(progress);
+  }
+
   void updateProgress(ReadingProgress progress) {
     _progress[progress.bookId] = progress;
     // Also update book status
@@ -71,12 +187,16 @@ class BookRepository {
         newStatus = BookStatus.reading;
       }
       if (newStatus != book.status) {
-        updateBook(book.copyWith(
-          status: newStatus,
-          lastOpened: DateTime.now(),
-        ));
+        final index = _books.indexWhere((b) => b.id == book.id);
+        if (index >= 0) {
+          _books[index] = book.copyWith(
+            status: newStatus,
+            lastOpened: DateTime.now(),
+          );
+        }
       }
     }
+    saveToDisk();
   }
 
   void setBookStatus(String bookId, BookStatus status) {
@@ -173,15 +293,18 @@ class BookRepository {
 
   void addAnnotation(Annotation annotation) {
     _annotations.add(annotation);
+    saveToDisk();
   }
 
   void removeAnnotation(String annotationId) {
     _annotations.removeWhere((a) => a.id == annotationId);
+    saveToDisk();
   }
 
   // Sessions
   void addSession(ReadingSession session) {
     _sessions.add(session);
+    saveToDisk();
   }
 
   List<ReadingSession> getSessions({String? bookId, DateTime? since}) {
