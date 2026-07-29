@@ -68,6 +68,7 @@ enum BookFormat {
   epub('EPUB', '.epub', 'application/epub+zip'),
   pdf('PDF', '.pdf', 'application/pdf'),
   txt('TXT', '.txt', 'text/plain'),
+  rtf('RTF', '.rtf', 'application/rtf'),
   markdown('Markdown', '.md', 'text/markdown'),
   html('HTML', '.html', 'text/html'),
   mobi('MOBI', '.mobi', 'application/x-mobipocket-ebook'),

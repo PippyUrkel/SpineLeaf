@@ -199,7 +199,7 @@ class ReaderSettings {
     this.textAlign = ReaderTextAlign.left,
     this.margin = 24.0,
     this.readingTheme = ReadingTheme.light,
-    this.scrollMode = true,
+    this.scrollMode = false,
   });
 
   ReaderSettings copyWith({
@@ -248,7 +248,7 @@ class ReaderSettings {
       textAlign: ReaderTextAlign.values[json['textAlign'] as int? ?? 0],
       margin: (json['margin'] as num?)?.toDouble() ?? 24.0,
       readingTheme: ReadingTheme.values[json['readingTheme'] as int? ?? 0],
-      scrollMode: json['scrollMode'] as bool? ?? true,
+      scrollMode: json['scrollMode'] as bool? ?? false,
     );
   }
 }
@@ -320,11 +320,13 @@ class ChapterSummary {
 class DictionaryEntry {
   final String word;
   final String? pronunciation;
+  final String? phoneticAudioUrl;
   final List<DictionaryDefinition> definitions;
 
   const DictionaryEntry({
     required this.word,
     this.pronunciation,
+    this.phoneticAudioUrl,
     this.definitions = const [],
   });
 }
@@ -333,11 +335,15 @@ class DictionaryDefinition {
   final String partOfSpeech;
   final String definition;
   final String? example;
+  final List<String> synonyms;
+  final List<String> antonyms;
 
   const DictionaryDefinition({
     required this.partOfSpeech,
     required this.definition,
     this.example,
+    this.synonyms = const [],
+    this.antonyms = const [],
   });
 }
 

@@ -18,6 +18,8 @@ class ImportService {
         type: FileType.custom,
         allowedExtensions: [
           'epub',
+          'pdf',
+          'rtf',
           'txt',
           'md',
         ],
@@ -40,6 +42,8 @@ class ImportService {
 
       final DocumentParser parser = switch (extension) {
         'epub' => EpubParser(),
+        'pdf' => PdfParser(),
+        'rtf' => RtfParserAdapter(),
         'txt' || 'md' => TxtParser(),
         _ => throw UnsupportedError(
             'Unsupported file format: ${extension ?? 'unknown'}',

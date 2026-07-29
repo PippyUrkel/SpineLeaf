@@ -1,11 +1,17 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants.dart';
 import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
 import '../../data/services/dictionary_service.dart';
+import '../../domain/models/structured_document.dart';
 import '../library/library_screen.dart';
+import 'dictionary_sheet.dart';
+import 'pagination_engine.dart';
+import 'reflowable_reader.dart';
+import 'pdf_reader.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final String bookId;
@@ -30,6 +36,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   DateTime? _sessionStartTime;
   Timer? _readingTimer;
   int _sessionSeconds = 0;
+
+  // Pagination state
+  final PaginationEngine _paginationEngine = PaginationEngine();
+  PaginatedChapter? _paginatedChapter;
+  int _currentPage = 0;
+  bool _isPaginationReady = false;
+
+  // Structured document state (if available)
+  StructuredDocument? _structuredDoc;
+
+  // Pinch gesture state
+  double _pinchStartFontSize = 0;
+  bool _isPinching = false;
 
   @override
   void initState() {
@@ -113,8 +132,55 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (index >= 0 && index < chapters.length) {
       setState(() {
         _currentChapter = index;
-        _scrollController.jumpTo(0);
+        _currentPage = 0;
+        _isPaginationReady = false;
+        _paginatedChapter = null;
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
       });
+    }
+  }
+
+  void _goToPage(int page) {
+    if (_paginatedChapter == null) return;
+    final clampedPage = page.clamp(0, _paginatedChapter!.pageCount - 1);
+
+    if (clampedPage != _currentPage) {
+      setState(() {
+        _currentPage = clampedPage;
+      });
+    }
+  }
+
+  void _nextPage() {
+    final prefsRepo = ref.read(preferencesRepositoryProvider);
+    final settings = prefsRepo.settings;
+    final repo = ref.read(bookRepositoryProvider);
+    final chapters = repo.getChapters(widget.bookId);
+
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      if (_currentPage < _paginatedChapter!.pageCount - 1) {
+        _goToPage(_currentPage + 1);
+      } else if (_currentChapter < chapters.length - 1) {
+        // Go to next chapter
+        _goToChapter(_currentChapter + 1);
+      }
+    }
+  }
+
+  void _previousPage() {
+    final prefsRepo = ref.read(preferencesRepositoryProvider);
+    final settings = prefsRepo.settings;
+
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      if (_currentPage > 0) {
+        _goToPage(_currentPage - 1);
+      } else if (_currentChapter > 0) {
+        // Go to last page of previous chapter
+        _goToChapter(_currentChapter - 1);
+        // Will need to go to last page after pagination — handled in build
+      }
     }
   }
 
@@ -128,7 +194,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         settings: prefsRepo.settings,
         onChanged: (settings) {
           prefsRepo.saveSettings(settings);
-          setState(() {});
+          setState(() {
+            _isPaginationReady = false;
+            _paginatedChapter = null;
+          });
         },
       ),
     );
@@ -219,13 +288,81 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _lookupWord(String word) async {
-    final dictService = ref.read(dictionaryServiceProvider);
-    final entry = await dictService.define(word);
-    if (entry != null && mounted) {
-      showModalBottomSheet(
-        context: context,
-        builder: (ctx) => _DictionarySheet(entry: entry),
-      );
+    // Show the dictionary sheet immediately with loading state
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => _DictionaryLookupSheet(word: word),
+    );
+  }
+
+
+  void _onPinchStart(ReaderSettings settings) {
+    _pinchStartFontSize = settings.fontSize;
+    _isPinching = true;
+  }
+
+  void _onPinchUpdate(double scale, PreferencesRepository prefsRepo) {
+    if (!_isPinching) return;
+    final newSize = (_pinchStartFontSize * scale).clamp(kMinFontSize, kMaxFontSize);
+    final settings = prefsRepo.settings;
+    prefsRepo.saveSettings(settings.copyWith(fontSize: newSize));
+    setState(() {
+      _isPaginationReady = false;
+      _paginatedChapter = null;
+    });
+  }
+
+  void _onPinchEnd() {
+    _isPinching = false;
+  }
+
+  // Build a structured content section for current chapter
+  DocumentSection _buildStructuredSection(Chapter chapter) {
+    // If structured document is available, use it
+    if (_structuredDoc != null &&
+        _currentChapter < _structuredDoc!.sections.length) {
+      return _structuredDoc!.sections[_currentChapter];
+    }
+
+    // Otherwise, create a simple section from plain text
+    final paragraphs = chapter.content.split('\n\n');
+    final blocks = paragraphs
+        .where((p) => p.trim().isNotEmpty)
+        .map((p) => ContentBlock.paragraph([DocInlineSpan(text: p.trim())]))
+        .toList();
+
+    return DocumentSection(
+      id: 'section_${chapter.index}',
+      title: chapter.title,
+      index: chapter.index,
+      contentBlocks: blocks,
+      wordCount: chapter.wordCount,
+    );
+  }
+
+  void _repaginate(
+    DocumentSection section,
+    Size viewportSize,
+    ReaderSettings settings,
+  ) {
+    if (_isPaginationReady) return;
+
+    final margin = settings.margin;
+    final contentSize = Size(
+      viewportSize.width - margin * 2,
+      viewportSize.height - 80, // Top/bottom padding
+    );
+
+    _paginatedChapter = _paginationEngine.paginate(
+      section: section,
+      viewportSize: contentSize,
+      settings: settings,
+    );
+    _isPaginationReady = true;
+
+    // Clamp current page
+    if (_paginatedChapter != null) {
+      _currentPage = _currentPage.clamp(0, _paginatedChapter!.pageCount - 1);
     }
   }
 
@@ -249,13 +386,38 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final chapter = chapters[_currentChapter.clamp(0, chapters.length - 1)];
     final readingTheme = settings.readingTheme;
 
+    // Check if this is a PDF
+    final isPdf = book.format == BookFormat.pdf;
+
+    // Build the reading surface based on format and mode
+    Widget readingSurface;
+    if (isPdf) {
+      readingSurface = _buildPdfReader(book, readingTheme);
+    } else if (settings.scrollMode) {
+      readingSurface = _buildScrollReader(chapter, settings, readingTheme, repo);
+    } else {
+      readingSurface = _buildPaginatedReader(chapter, settings, readingTheme, repo, chapters);
+    }
+
     return Scaffold(
       backgroundColor: readingTheme.backgroundColor,
       body: Stack(
         children: [
-          // Reading content
+          // Reading content with gestures
           GestureDetector(
-            onTap: _toggleControls,
+            onScaleStart: !isPdf
+                ? (_) => _onPinchStart(settings)
+                : null,
+            onScaleUpdate: !isPdf
+                ? (details) {
+                    if (details.pointerCount >= 2) {
+                      _onPinchUpdate(details.scale, prefsRepo);
+                    }
+                  }
+                : null,
+            onScaleEnd: !isPdf
+                ? (_) => _onPinchEnd()
+                : null,
             child: Column(
               children: [
                 // Thin progress bar
@@ -263,7 +425,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   bottom: false,
                   child: ClipRRect(
                     child: LinearProgressIndicator(
-                      value: ((_currentChapter + 1) / chapters.length).clamp(0.0, 1.0),
+                      value: _calculateProgress(chapters, settings),
                       minHeight: 2,
                       backgroundColor: readingTheme.surfaceColor,
                       color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
@@ -271,145 +433,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   ),
                 ),
                 // Content
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: settings.margin,
-                      vertical: 24,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 48),
-                        // Chapter title
-                        Text(
-                          chapter.title,
-                          style: TextStyle(
-                            fontFamily: settings.fontFamily,
-                            fontSize: settings.fontSize + 6,
-                            fontWeight: FontWeight.bold,
-                            color: readingTheme.textColor,
-                            height: 1.3,
-                          ),
-                        ),
-                        SizedBox(height: settings.paragraphSpacing + 8),
-                        // Chapter content
-                        SelectableText(
-                          chapter.content,
-                          style: TextStyle(
-                            fontFamily: settings.fontFamily,
-                            fontSize: settings.fontSize,
-                            fontWeight: settings.fontWeight,
-                            height: settings.lineHeight,
-                            color: readingTheme.textColor,
-                            letterSpacing: 0.2,
-                          ),
-                          textAlign: settings.textAlign.value,
-                          onSelectionChanged: (selection, cause) {
-                            // Text selection handling - could add floating menu
-                          },
-                          contextMenuBuilder: (context, editableTextState) {
-                            final selection = editableTextState.textEditingValue.selection;
-                            final text = editableTextState.textEditingValue.text;
-                            final selectedText = selection.textInside(text).trim();
-
-                            return AdaptiveTextSelectionToolbar(
-                              anchors: editableTextState.contextMenuAnchors,
-                              children: [
-                                if (selectedText.isNotEmpty && selectedText.split(' ').length <= 3)
-                                  _ToolbarButton(
-                                    icon: Icons.book,
-                                    label: 'Define',
-                                    onPressed: () {
-                                      editableTextState.hideToolbar();
-                                      _lookupWord(selectedText);
-                                    },
-                                  ),
-                                if (selectedText.isNotEmpty)
-                                  _ToolbarButton(
-                                    icon: Icons.highlight,
-                                    label: 'Highlight',
-                                    onPressed: () {
-                                      editableTextState.hideToolbar();
-                                      repo.addAnnotation(Annotation(
-                                        id: 'hl_${DateTime.now().millisecondsSinceEpoch}',
-                                        bookId: widget.bookId,
-                                        chapterIndex: _currentChapter,
-                                        type: AnnotationType.highlight,
-                                        selectedText: selectedText,
-                                        highlightColor: kHighlightColors[0],
-                                        position: selection.start,
-                                        createdAt: DateTime.now(),
-                                      ));
-                                      ScaffoldMessenger.of(this.context).showSnackBar(
-                                        const SnackBar(content: Text('Highlighted')),
-                                      );
-                                    },
-                                  ),
-                                if (selectedText.isNotEmpty)
-                                  _ToolbarButton(
-                                    icon: Icons.note_add,
-                                    label: 'Note',
-                                    onPressed: () {
-                                      editableTextState.hideToolbar();
-                                      _showAddNoteDialog(selectedText);
-                                    },
-                                  ),
-                                _ToolbarButton(
-                                  icon: Icons.copy,
-                                  label: 'Copy',
-                                  onPressed: () {
-                                    editableTextState.copySelection(SelectionChangedCause.toolbar);
-                                  },
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                        SizedBox(height: settings.paragraphSpacing * 2),
-                        // Chapter navigation at bottom
-                        Divider(color: readingTheme.textColor.withValues(alpha: 0.2)),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            if (_currentChapter > 0)
-                              TextButton.icon(
-                                onPressed: () => _goToChapter(_currentChapter - 1),
-                                icon: Icon(Icons.arrow_back, color: readingTheme.textColor.withValues(alpha: 0.6)),
-                                label: Text(
-                                  'Previous',
-                                  style: TextStyle(color: readingTheme.textColor.withValues(alpha: 0.6)),
-                                ),
-                              )
-                            else
-                              const SizedBox(),
-                            Text(
-                              'Chapter ${_currentChapter + 1} of ${chapters.length}',
-                              style: TextStyle(
-                                color: readingTheme.textColor.withValues(alpha: 0.4),
-                                fontSize: 12,
-                              ),
-                            ),
-                            if (_currentChapter < chapters.length - 1)
-                              TextButton.icon(
-                                onPressed: () => _goToChapter(_currentChapter + 1),
-                                icon: Text(
-                                  'Next',
-                                  style: TextStyle(color: readingTheme.textColor.withValues(alpha: 0.6)),
-                                ),
-                                label: Icon(Icons.arrow_forward, color: readingTheme.textColor.withValues(alpha: 0.6)),
-                              )
-                            else
-                              const SizedBox(),
-                          ],
-                        ),
-                        const SizedBox(height: 48),
-                      ],
-                    ),
-                  ),
-                ),
+                Expanded(child: readingSurface),
               ],
             ),
           ),
@@ -500,14 +524,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                       dense: true,
                                     ),
                                   ),
-                                  const PopupMenuItem(
-                                    value: 'rsvp',
-                                    child: ListTile(
-                                      leading: Icon(Icons.speed),
-                                      title: Text('RSVP Mode'),
-                                      dense: true,
+                                  if (!isPdf)
+                                    const PopupMenuItem(
+                                      value: 'rsvp',
+                                      child: ListTile(
+                                        leading: Icon(Icons.speed),
+                                        title: Text('RSVP Mode'),
+                                        dense: true,
+                                      ),
                                     ),
-                                  ),
                                   const PopupMenuItem(
                                     value: 'details',
                                     child: ListTile(
@@ -573,11 +598,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Chapter slider
+                              // Chapter/page slider
                               Row(
                                 children: [
                                   Text(
-                                    'Ch. ${_currentChapter + 1}',
+                                    _getPositionLabel(settings, chapters),
                                     style: const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
@@ -585,17 +610,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                                   ),
                                   Expanded(
                                     child: Slider(
-                                      value: _currentChapter.toDouble(),
+                                      value: _getSliderValue(settings, chapters),
                                       min: 0,
-                                      max: (chapters.length - 1).toDouble(),
-                                      divisions: chapters.length > 1 ? chapters.length - 1 : 1,
+                                      max: _getSliderMax(settings, chapters),
+                                      divisions: _getSliderDivisions(settings, chapters),
                                       onChanged: (value) {
-                                        _goToChapter(value.toInt());
+                                        _onSliderChanged(value, settings, chapters);
                                       },
                                     ),
                                   ),
                                   Text(
-                                    'Ch. ${chapters.length}',
+                                    _getMaxLabel(settings, chapters),
                                     style: const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
@@ -644,61 +669,367 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
-  void _showAddNoteDialog(String selectedText) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Note'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+  // ─── Paginated Reader ─────────────────────────────────────────────────
+
+  Widget _buildPaginatedReader(
+    Chapter chapter,
+    ReaderSettings settings,
+    ReadingTheme readingTheme,
+    BookRepository repo,
+    List<Chapter> chapters,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final section = _buildStructuredSection(chapter);
+        _repaginate(
+          section,
+          Size(constraints.maxWidth, constraints.maxHeight),
+          settings,
+        );
+
+        if (_paginatedChapter == null || _paginatedChapter!.pages.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final totalPages = _paginatedChapter!.pageCount;
+        final page = _paginatedChapter!.pages[_currentPage.clamp(0, totalPages - 1)];
+
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTapUp: (details) {
+            final screenWidth = constraints.maxWidth;
+            final tapX = details.localPosition.dx;
+            final tapY = details.localPosition.dy;
+            final screenHeight = constraints.maxHeight;
+
+            // Center third detection
+            final leftThird = screenWidth / 3;
+            final rightThird = screenWidth * 2 / 3;
+            final topThird = screenHeight / 3;
+            final bottomThird = screenHeight * 2 / 3;
+
+            if (tapX > leftThird && tapX < rightThird &&
+                tapY > topThird && tapY < bottomThird) {
+              // Center tap — toggle controls
+              _toggleControls();
+            } else if (tapX < leftThird) {
+              // Left tap — previous page
+              _previousPage();
+            } else if (tapX > rightThird) {
+              // Right tap — next page
+              _nextPage();
+            }
+          },
+          onHorizontalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            if (velocity < -200) {
+              _nextPage();
+            } else if (velocity > 200) {
+              _previousPage();
+            }
+          },
+          child: Container(
+            color: readingTheme.backgroundColor,
+            padding: EdgeInsets.symmetric(
+              horizontal: settings.margin,
+              vertical: 24,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 24),
+                // Page content
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: ContentBlockRenderer(
+                      blocks: page.blocks,
+                      settings: settings,
+                      readingTheme: readingTheme,
+                      images: _structuredDoc?.images ?? const {},
+                      onWordLookup: _lookupWord,
+                    ),
+                  ),
+                ),
+                // Page indicator
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Page ${_currentPage + 1} of $totalPages  •  Chapter ${_currentChapter + 1} of ${chapters.length}',
+                      style: TextStyle(
+                        color: readingTheme.textColor.withValues(alpha: 0.35),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ─── Scroll Reader ────────────────────────────────────────────────────
+
+  Widget _buildScrollReader(
+    Chapter chapter,
+    ReaderSettings settings,
+    ReadingTheme readingTheme,
+    BookRepository repo,
+  ) {
+    final section = _buildStructuredSection(chapter);
+    final chapters = repo.getChapters(widget.bookId);
+
+    return GestureDetector(
+      onTapUp: (details) {
+        final size = MediaQuery.of(context).size;
+        final tapX = details.globalPosition.dx;
+        final tapY = details.globalPosition.dy;
+        final centerX = size.width / 2;
+        final centerY = size.height / 2;
+
+        // Center third of screen
+        if ((tapX - centerX).abs() < size.width / 6 &&
+            (tapY - centerY).abs() < size.height / 6) {
+          _toggleControls();
+        }
+      },
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        padding: EdgeInsets.symmetric(
+          horizontal: settings.margin,
+          vertical: 24,
+        ),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const SizedBox(height: 48),
+            // Chapter title
             Text(
-              '"$selectedText"',
-              style: const TextStyle(fontStyle: FontStyle.italic),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'Your note...',
-                border: OutlineInputBorder(),
+              chapter.title,
+              style: TextStyle(
+                fontFamily: settings.fontFamily,
+                fontSize: settings.fontSize + 6,
+                fontWeight: FontWeight.bold,
+                color: readingTheme.textColor,
+                height: 1.3,
               ),
-              maxLines: 3,
-              autofocus: true,
             ),
+            SizedBox(height: settings.paragraphSpacing + 8),
+            // Chapter content — structured blocks
+            ContentBlockRenderer(
+              blocks: section.contentBlocks,
+              settings: settings,
+              readingTheme: readingTheme,
+              images: _structuredDoc?.images ?? const {},
+              onWordLookup: _lookupWord,
+            ),
+            SizedBox(height: settings.paragraphSpacing * 2),
+            // Chapter navigation at bottom
+            Divider(color: readingTheme.textColor.withValues(alpha: 0.2)),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (_currentChapter > 0)
+                  TextButton.icon(
+                    onPressed: () => _goToChapter(_currentChapter - 1),
+                    icon: Icon(Icons.arrow_back, color: readingTheme.textColor.withValues(alpha: 0.6)),
+                    label: Text(
+                      'Previous',
+                      style: TextStyle(color: readingTheme.textColor.withValues(alpha: 0.6)),
+                    ),
+                  )
+                else
+                  const SizedBox(),
+                Text(
+                  'Chapter ${_currentChapter + 1} of ${chapters.length}',
+                  style: TextStyle(
+                    color: readingTheme.textColor.withValues(alpha: 0.4),
+                    fontSize: 12,
+                  ),
+                ),
+                if (_currentChapter < chapters.length - 1)
+                  TextButton.icon(
+                    onPressed: () => _goToChapter(_currentChapter + 1),
+                    icon: Text(
+                      'Next',
+                      style: TextStyle(color: readingTheme.textColor.withValues(alpha: 0.6)),
+                    ),
+                    label: Icon(Icons.arrow_forward, color: readingTheme.textColor.withValues(alpha: 0.6)),
+                  )
+                else
+                  const SizedBox(),
+              ],
+            ),
+            const SizedBox(height: 48),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+      ),
+    );
+  }
+
+  // ─── PDF Reader ───────────────────────────────────────────────────────
+
+  Widget _buildPdfReader(Book book, ReadingTheme readingTheme) {
+    final filePath = book.filePath ?? book.description ?? '';
+    final file = File(filePath);
+
+    if (filePath.isNotEmpty && file.existsSync()) {
+      return PdfReaderWidget(
+        filePath: filePath,
+        readingTheme: readingTheme,
+        initialPage: _currentPage,
+        onCenterTap: _toggleControls,
+        onPageChanged: (page, totalPages) {
+          setState(() {
+            _currentPage = page;
+          });
+        },
+      );
+    }
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.picture_as_pdf,
+            size: 64,
+            color: readingTheme.textColor.withValues(alpha: 0.4),
           ),
-          FilledButton(
-            onPressed: () {
-              final repo = ref.read(bookRepositoryProvider);
-              repo.addAnnotation(Annotation(
-                id: 'note_${DateTime.now().millisecondsSinceEpoch}',
-                bookId: widget.bookId,
-                chapterIndex: _currentChapter,
-                type: AnnotationType.note,
-                selectedText: selectedText,
-                note: controller.text,
-                position: 0,
-                createdAt: DateTime.now(),
-              ));
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Note added')),
-              );
-            },
-            child: const Text('Save'),
+          const SizedBox(height: 16),
+          Text(
+            book.title,
+            style: TextStyle(
+              color: readingTheme.textColor,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'PDF document ready for reading.',
+            style: TextStyle(
+              color: readingTheme.textColor.withValues(alpha: 0.6),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  // ─── Slider Helpers ───────────────────────────────────────────────────
+
+  double _calculateProgress(List<Chapter> chapters, ReaderSettings settings) {
+    if (!settings.scrollMode && _paginatedChapter != null && _paginatedChapter!.pageCount > 0) {
+      // Combined chapter + page progress
+      final chapterFraction = 1.0 / chapters.length;
+      final pageFraction = (_currentPage + 1) / _paginatedChapter!.pageCount;
+      return (_currentChapter * chapterFraction + pageFraction * chapterFraction).clamp(0.0, 1.0);
+    }
+    return ((_currentChapter + 1) / chapters.length).clamp(0.0, 1.0);
+  }
+
+  String _getPositionLabel(ReaderSettings settings, List<Chapter> chapters) {
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      return 'Page ${_currentPage + 1}';
+    }
+    return 'Ch. ${_currentChapter + 1}';
+  }
+
+  String _getMaxLabel(ReaderSettings settings, List<Chapter> chapters) {
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      return 'Page ${_paginatedChapter!.pageCount}';
+    }
+    return 'Ch. ${chapters.length}';
+  }
+
+  double _getSliderValue(ReaderSettings settings, List<Chapter> chapters) {
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      return _currentPage.toDouble();
+    }
+    return _currentChapter.toDouble();
+  }
+
+  double _getSliderMax(ReaderSettings settings, List<Chapter> chapters) {
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      return (_paginatedChapter!.pageCount - 1).toDouble().clamp(0, double.infinity);
+    }
+    return (chapters.length - 1).toDouble();
+  }
+
+  int? _getSliderDivisions(ReaderSettings settings, List<Chapter> chapters) {
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      return _paginatedChapter!.pageCount > 1 ? _paginatedChapter!.pageCount - 1 : 1;
+    }
+    return chapters.length > 1 ? chapters.length - 1 : 1;
+  }
+
+  void _onSliderChanged(double value, ReaderSettings settings, List<Chapter> chapters) {
+    if (!settings.scrollMode && _paginatedChapter != null) {
+      _goToPage(value.toInt());
+    } else {
+      _goToChapter(value.toInt());
+    }
+  }
+}
+
+// ─── Dictionary Lookup Sheet (with loading) ────────────────────────────
+
+class _DictionaryLookupSheet extends ConsumerStatefulWidget {
+  final String word;
+
+  const _DictionaryLookupSheet({required this.word});
+
+  @override
+  ConsumerState<_DictionaryLookupSheet> createState() => _DictionaryLookupSheetState();
+}
+
+class _DictionaryLookupSheetState extends ConsumerState<_DictionaryLookupSheet> {
+  bool _isLoading = true;
+  DictionaryEntry? _entry;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _lookup();
+  }
+
+  Future<void> _lookup() async {
+    try {
+      final dictService = ref.read(dictionaryServiceProvider);
+      final entry = await dictService.define(widget.word);
+      if (mounted) {
+        setState(() {
+          _entry = entry;
+          _isLoading = false;
+          if (entry == null) {
+            _error = 'No definition found for "${widget.word}".';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = 'Could not look up "${widget.word}". Check your connection.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DictionarySheet(
+      word: widget.word,
+      entry: _entry,
+      isLoading: _isLoading,
+      errorMessage: _error,
     );
   }
 }
@@ -750,6 +1081,29 @@ class _ReaderSettingsSheetState extends State<_ReaderSettingsSheet> {
                 Center(
                   child: Text('Reader Settings',
                       style: Theme.of(context).textTheme.titleMedium),
+                ),
+                const SizedBox(height: 20),
+
+                // Reading mode toggle
+                Text('Reading Mode', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 8),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: false,
+                      icon: Icon(Icons.auto_stories),
+                      label: Text('Paginated'),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      icon: Icon(Icons.view_stream),
+                      label: Text('Scroll'),
+                    ),
+                  ],
+                  selected: {_settings.scrollMode},
+                  onSelectionChanged: (set) {
+                    _update(_settings.copyWith(scrollMode: set.first));
+                  },
                 ),
                 const SizedBox(height: 20),
 
@@ -813,7 +1167,7 @@ class _ReaderSettingsSheetState extends State<_ReaderSettingsSheet> {
                     ButtonSegment(value: 'Mono', label: Text('Mono')),
                   ],
                   selected: {
-                    _settings.fontFamily == 'monospace' ? 'Mono' : 
+                    _settings.fontFamily == 'monospace' ? 'Mono' :
                     _settings.fontFamily == 'sans-serif' ? 'Sans' : 'Serif',
                   },
                   onSelectionChanged: (set) {
@@ -927,115 +1281,6 @@ class _SettingsSlider extends StatelessWidget {
             onChanged: onChanged,
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─── Dictionary Bottom Sheet ──────────────────────────────────────────
-
-class _DictionarySheet extends StatelessWidget {
-  final DictionaryEntry entry;
-
-  const _DictionarySheet({required this.entry});
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  entry.word,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            if (entry.pronunciation != null) ...[
-              Text(
-                entry.pronunciation!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            ...entry.definitions.map((def) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        def.partOfSpeech,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(def.definition, style: Theme.of(context).textTheme.bodyMedium),
-                    if (def.example != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '"${def.example}"',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontStyle: FontStyle.italic,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ToolbarButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
-
-  const _ToolbarButton({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 16),
-      label: Text(label, style: const TextStyle(fontSize: 12)),
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 36),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
       ),
     );
   }
