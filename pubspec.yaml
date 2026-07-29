@@ -63,6 +63,10 @@ flutter_icons:
   ios: true
   image_path: "assets/icon/icon.png"
 
+  adaptive_icon_background: "#32116D"
+  adaptive_icon_foreground: "assets/icon/FOREGROUND.png"
+  adaptive_icon_monochrome: "assets/icon/MONOCHROME.png"
+
   web:
     generate: true
     image_path: "assets/icon/icon.png"
