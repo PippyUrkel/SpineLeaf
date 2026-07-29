@@ -136,14 +136,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     });
   }
 
-  void _goToChapter(int index) {
+  void _goToChapter(int index, {int? targetPage}) {
     final repo = ref.read(bookRepositoryProvider);
     final chapters = repo.getChapters(widget.bookId);
     if (index >= 0 && index < chapters.length) {
       _saveProgress();
       setState(() {
         _currentChapter = index;
-        _currentPage = 0;
+        _currentPage = targetPage ?? 0;
         _isPaginationReady = false;
         _paginatedChapter = null;
         if (_scrollController.hasClients) {
@@ -156,7 +156,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   void _goToPage(int page) {
     if (_paginatedChapter == null) return;
-    final clampedPage = page.clamp(0, _paginatedChapter!.pageCount - 1);
+    final clampedPage = page.clamp(0, _paginatedChapter!.pageCount);
 
     if (clampedPage != _currentPage) {
       setState(() {
@@ -173,10 +173,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final chapters = repo.getChapters(widget.bookId);
 
     if (!settings.scrollMode && _paginatedChapter != null) {
-      if (_currentPage < _paginatedChapter!.pageCount - 1) {
+      final totalPages = _paginatedChapter!.pageCount;
+      if (_currentPage < totalPages) {
         _goToPage(_currentPage + 1);
       } else if (_currentChapter < chapters.length - 1) {
-        // Go to next chapter
         _goToChapter(_currentChapter + 1);
       }
     }
@@ -190,9 +190,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (_currentPage > 0) {
         _goToPage(_currentPage - 1);
       } else if (_currentChapter > 0) {
-        // Go to last page of previous chapter
-        _goToChapter(_currentChapter - 1);
-        // Will need to go to last page after pagination — handled in build
+        _goToChapter(_currentChapter - 1, targetPage: 999999);
       }
     }
   }
@@ -330,7 +328,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     // Clamp current page
     if (_paginatedChapter != null) {
-      _currentPage = _currentPage.clamp(0, _paginatedChapter!.pageCount - 1);
+      if (_currentPage >= 99999) {
+        _currentPage = _paginatedChapter!.pageCount;
+      } else {
+        _currentPage = _currentPage.clamp(0, _paginatedChapter!.pageCount);
+      }
     }
   }
 
@@ -353,8 +355,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     final chapter = chapters[_currentChapter.clamp(0, chapters.length - 1)];
     final readingTheme = settings.readingTheme;
-
-    // Check if this is a PDF
     final isPdf = book.format == BookFormat.pdf;
 
     // Build the reading surface based on format and mode
@@ -367,8 +367,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       readingSurface = _buildPaginatedReader(chapter, settings, readingTheme, repo, chapters);
     }
 
-    return Scaffold(
-      backgroundColor: readingTheme.backgroundColor,
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        _saveProgress();
+      },
+      child: Scaffold(
+        backgroundColor: readingTheme.backgroundColor,
       body: Stack(
         children: [
           // Reading content with gestures
@@ -634,8 +638,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           ],
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ─── Paginated Reader ─────────────────────────────────────────────────
 

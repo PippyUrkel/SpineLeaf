@@ -21,17 +21,50 @@ class FreeDictionaryService implements DictionaryService {
 
   @override
   Future<DictionaryEntry?> define(String word) async {
-    final cleanWord = word.toLowerCase().trim();
+    final cleanWord = word.replaceAll(RegExp(r'^[^\w]+|[^\w]+$'), '').toLowerCase().trim();
     if (cleanWord.isEmpty) return null;
 
-    // Check cache first
-    final cached = await _cache.get(cleanWord);
+    final primary = await _fetchDefinition(cleanWord);
+    if (primary != null) return primary;
+
+    // Stemming fallbacks for plurals, past tense, etc.
+    final fallbacks = <String>[];
+    if (cleanWord.endsWith("'s")) {
+      fallbacks.add(cleanWord.substring(0, cleanWord.length - 2));
+    }
+    if (cleanWord.endsWith("ies") && cleanWord.length > 3) {
+      fallbacks.add('${cleanWord.substring(0, cleanWord.length - 3)}y');
+    }
+    if (cleanWord.endsWith("es") && cleanWord.length > 3) {
+      fallbacks.add(cleanWord.substring(0, cleanWord.length - 2));
+    }
+    if (cleanWord.endsWith("s") && cleanWord.length > 2) {
+      fallbacks.add(cleanWord.substring(0, cleanWord.length - 1));
+    }
+    if (cleanWord.endsWith("ed") && cleanWord.length > 3) {
+      fallbacks.add(cleanWord.substring(0, cleanWord.length - 2));
+      fallbacks.add(cleanWord.substring(0, cleanWord.length - 1));
+    }
+    if (cleanWord.endsWith("ing") && cleanWord.length > 4) {
+      fallbacks.add(cleanWord.substring(0, cleanWord.length - 3));
+      fallbacks.add('${cleanWord.substring(0, cleanWord.length - 3)}e');
+    }
+
+    for (final fallback in fallbacks) {
+      final res = await _fetchDefinition(fallback);
+      if (res != null) return res;
+    }
+
+    return null;
+  }
+
+  Future<DictionaryEntry?> _fetchDefinition(String word) async {
+    final cached = await _cache.get(word);
     if (cached != null) return cached;
 
-    // Try online lookup
     try {
       final response = await _client
-          .get(Uri.parse('$_baseUrl/$cleanWord'))
+          .get(Uri.parse('$_baseUrl/$word'))
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
@@ -40,18 +73,11 @@ class FreeDictionaryService implements DictionaryService {
 
         final entry = _parseResponse(data);
         if (entry != null) {
-          // Cache the result
-          await _cache.put(cleanWord, entry);
+          await _cache.put(word, entry);
         }
         return entry;
-      } else if (response.statusCode == 404) {
-        // Word not found
-        return null;
       }
-    } catch (_) {
-      // Network error — return null (caller handles error state)
-    }
-
+    } catch (_) {}
     return null;
   }
 

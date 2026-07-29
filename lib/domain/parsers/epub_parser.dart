@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:epubx/epubx.dart';
+import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
 import '../models/structured_document.dart';
 import '../../core/constants.dart';
 import '../../data/models/models.dart';
@@ -67,10 +69,36 @@ class StructuredEpubParser {
       }
     }
 
+    String? coverPath;
+    try {
+      Uint8List? coverBytes;
+      if (epubBook.CoverImage != null) {
+        coverBytes = Uint8List.fromList(img.encodePng(epubBook.CoverImage!));
+      } else if (images.isNotEmpty) {
+        final coverKey = images.keys.firstWhere(
+          (k) => k.toLowerCase().contains('cover'),
+          orElse: () => images.keys.first,
+        );
+        coverBytes = images[coverKey];
+      }
+
+      if (coverBytes != null && coverBytes.isNotEmpty) {
+        final appDir = await getApplicationDocumentsDirectory();
+        final coversDir = Directory('${appDir.path}/covers');
+        if (!coversDir.existsSync()) {
+          coversDir.createSync(recursive: true);
+        }
+        final coverFile = File('${coversDir.path}/cover_${DateTime.now().millisecondsSinceEpoch}.png');
+        await coverFile.writeAsBytes(coverBytes);
+        coverPath = coverFile.path;
+      }
+    } catch (_) {}
+
     final book = Book(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
       author: author,
+      coverPath: coverPath,
       description: 'Imported EPUB book.',
       filePath: file.path,
       publisher: 'Unknown',
@@ -106,10 +134,20 @@ class StructuredEpubParser {
       for (final entry in epubBook.Content!.Images!.entries) {
         final imageContent = entry.value;
         if (imageContent.Content != null) {
-          images[entry.key] = Uint8List.fromList(imageContent.Content!);
-          // Also store with just the filename for easier matching
-          final filename = entry.key.split('/').last;
-          images[filename] = Uint8List.fromList(imageContent.Content!);
+          final bytes = Uint8List.fromList(imageContent.Content!);
+          final rawKey = entry.key;
+          final decodedKey = Uri.decodeFull(rawKey);
+          final filename = rawKey.split('/').last;
+          final decodedFilename = decodedKey.split('/').last;
+
+          images[rawKey] = bytes;
+          images[decodedKey] = bytes;
+          images[filename] = bytes;
+          images[decodedFilename] = bytes;
+          images[filename.toLowerCase()] = bytes;
+          images[decodedFilename.toLowerCase()] = bytes;
+          images[rawKey.replaceAll('../', '')] = bytes;
+          images[decodedKey.replaceAll('../', '')] = bytes;
         }
       }
     }

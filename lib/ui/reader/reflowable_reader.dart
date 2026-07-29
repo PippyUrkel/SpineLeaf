@@ -126,12 +126,26 @@ class ContentBlockRenderer extends StatelessWidget {
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _imageFallback(block.imageAlt),
       );
-    } else if (block.imageSrc != null && images.containsKey(block.imageSrc)) {
-      imageWidget = Image.memory(
-        images[block.imageSrc]!,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _imageFallback(block.imageAlt),
-      );
+    } else if (block.imageSrc != null) {
+      final src = block.imageSrc!;
+      final decodedSrc = Uri.decodeFull(src);
+      final filename = src.split('/').last;
+
+      final bytes = images[src] ??
+          images[decodedSrc] ??
+          images[filename] ??
+          images[filename.toLowerCase()] ??
+          images[src.replaceAll('../', '')];
+
+      if (bytes != null) {
+        imageWidget = Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _imageFallback(block.imageAlt),
+        );
+      } else {
+        imageWidget = _imageFallback(block.imageAlt);
+      }
     } else {
       imageWidget = _imageFallback(block.imageAlt);
     }

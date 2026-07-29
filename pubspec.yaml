@@ -21,6 +21,7 @@ dependencies:
 
   # EPUB Parsing
   epubx: ^4.0.0
+  image: ^3.3.0
 
   # HTML Rendering
   flutter_html: ^3.0.0-beta.2

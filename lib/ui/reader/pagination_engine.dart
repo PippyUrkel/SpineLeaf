@@ -43,11 +43,6 @@ class PaginatedChapter {
 /// then groups blocks into pages that fit within the viewport.
 class PaginationEngine {
   /// Paginates a document section into pages that fit the given constraints.
-  ///
-  /// [section] The document section to paginate.
-  /// [viewportSize] The available size for content (after margins).
-  /// [settings] Reader settings affecting layout.
-  /// [imageCache] Image data for resolving image dimensions.
   PaginatedChapter paginate({
     required DocumentSection section,
     required Size viewportSize,
@@ -61,8 +56,8 @@ class PaginationEngine {
       return PaginatedChapter(sectionIndex: section.index, pages: []);
     }
 
-    final blocks = section.contentBlocks;
-    if (blocks.isEmpty) {
+    final originalBlocks = section.contentBlocks;
+    if (originalBlocks.isEmpty) {
       return PaginatedChapter(
         sectionIndex: section.index,
         pages: [
@@ -71,56 +66,70 @@ class PaginationEngine {
       );
     }
 
+    final blockQueue = List<ContentBlock>.of(originalBlocks);
     final pages = <ReaderPage>[];
     var currentPageBlocks = <ContentBlock>[];
     var currentHeight = 0.0;
     var pageStartBlockIndex = 0;
+    int currentOriginalIndex = 0;
 
-    for (int i = 0; i < blocks.length; i++) {
-      final block = blocks[i];
+    while (blockQueue.isNotEmpty) {
+      final block = blockQueue.removeAt(0);
       final blockHeight = _measureBlock(block, availableWidth, settings);
       final spacingAfter = _blockSpacing(block, settings);
 
-      // If this single block is taller than the page, it gets its own page
-      if (blockHeight > availableHeight && currentPageBlocks.isEmpty) {
-        pages.add(ReaderPage(
-          blocks: [block],
-          startBlockIndex: i,
-          endBlockIndex: i,
-        ));
-        pageStartBlockIndex = i + 1;
-        currentHeight = 0;
-        continue;
+      // Check if adding block overflows current page
+      if (currentHeight + blockHeight + spacingAfter > availableHeight) {
+        if (currentPageBlocks.isNotEmpty) {
+          // Finish current page and re-process this block on a fresh page
+          pages.add(ReaderPage(
+            blocks: List.of(currentPageBlocks),
+            startBlockIndex: pageStartBlockIndex,
+            endBlockIndex: currentOriginalIndex,
+          ));
+          currentPageBlocks = [];
+          currentHeight = 0.0;
+          pageStartBlockIndex = currentOriginalIndex;
+          blockQueue.insert(0, block);
+          continue;
+        }
+
+        // On a fresh page, if block is taller than availableHeight: SLICE IT!
+        if (block.spans.isNotEmpty && _isSliceableType(block.type)) {
+          final targetHeight = (availableHeight - 20).clamp(50.0, availableHeight);
+          final split = _sliceBlock(block, availableWidth, targetHeight, settings);
+          if (split != null && split.first.spans.isNotEmpty && split.second.spans.isNotEmpty) {
+            currentPageBlocks.add(split.first);
+            pages.add(ReaderPage(
+              blocks: List.of(currentPageBlocks),
+              startBlockIndex: pageStartBlockIndex,
+              endBlockIndex: currentOriginalIndex,
+            ));
+            currentPageBlocks = [];
+            currentHeight = 0.0;
+            pageStartBlockIndex = currentOriginalIndex;
+
+            // Push remainder back to queue for subsequent pages
+            blockQueue.insert(0, split.second);
+            continue;
+          }
+        }
       }
 
-      // Check if adding this block would overflow the page
-      if (currentHeight + blockHeight + spacingAfter > availableHeight &&
-          currentPageBlocks.isNotEmpty) {
-        // Finish current page
-        pages.add(ReaderPage(
-          blocks: List.of(currentPageBlocks),
-          startBlockIndex: pageStartBlockIndex,
-          endBlockIndex: i - 1,
-        ));
-        currentPageBlocks = [block];
-        currentHeight = blockHeight + spacingAfter;
-        pageStartBlockIndex = i;
-      } else {
-        currentPageBlocks.add(block);
-        currentHeight += blockHeight + spacingAfter;
-      }
+      // Block fits on current page!
+      currentPageBlocks.add(block);
+      currentHeight += blockHeight + spacingAfter;
+      currentOriginalIndex++;
     }
 
-    // Add remaining blocks as the last page
     if (currentPageBlocks.isNotEmpty) {
       pages.add(ReaderPage(
         blocks: List.of(currentPageBlocks),
         startBlockIndex: pageStartBlockIndex,
-        endBlockIndex: blocks.length - 1,
+        endBlockIndex: originalBlocks.length - 1,
       ));
     }
 
-    // Ensure at least one page
     if (pages.isEmpty) {
       pages.add(ReaderPage(
         blocks: [],
@@ -132,6 +141,73 @@ class PaginationEngine {
     return PaginatedChapter(sectionIndex: section.index, pages: pages);
   }
 
+  bool _isSliceableType(ContentBlockType type) {
+    return type == ContentBlockType.paragraph ||
+        type == ContentBlockType.blockquote ||
+        type == ContentBlockType.codeBlock;
+  }
+
+  ({ContentBlock first, ContentBlock second})? _sliceBlock(
+    ContentBlock block,
+    double availableWidth,
+    double targetHeight,
+    ReaderSettings settings,
+  ) {
+    final spans = block.spans;
+    if (spans.isEmpty) return null;
+
+    final fontSize = switch (block.type) {
+      ContentBlockType.codeBlock => settings.fontSize * 0.9,
+      _ => settings.fontSize,
+    };
+    final effectiveWidth = block.type == ContentBlockType.blockquote ? availableWidth - 24 : availableWidth;
+
+    final tp = TextPainter(
+      text: block.toTextSpan(TextStyle(
+        fontFamily: settings.fontFamily,
+        fontSize: fontSize,
+        fontWeight: settings.fontWeight,
+        height: settings.lineHeight,
+      )),
+      textDirection: TextDirection.ltr,
+      textAlign: block.textAlign ?? settings.textAlign.value,
+    )..layout(maxWidth: effectiveWidth.clamp(1.0, double.infinity));
+
+    final pos = tp.getPositionForOffset(Offset(effectiveWidth, targetHeight));
+    int charOffset = pos.offset;
+
+    if (charOffset <= 0 || charOffset >= block.plainText.length) {
+      charOffset = (block.plainText.length / 2).round();
+    }
+
+    final text = block.plainText;
+    int breakIndex = text.lastIndexOf(' ', charOffset);
+    if (breakIndex == -1 || breakIndex < (charOffset * 0.4)) {
+      breakIndex = charOffset;
+    }
+
+    final firstText = text.substring(0, breakIndex).trim();
+    final secondText = text.substring(breakIndex).trim();
+
+    if (firstText.isEmpty || secondText.isEmpty) return null;
+
+    final firstBlock = ContentBlock(
+      type: block.type,
+      spans: [DocInlineSpan(text: firstText)],
+      plainText: firstText,
+      textAlign: block.textAlign,
+    );
+
+    final secondBlock = ContentBlock(
+      type: block.type,
+      spans: [DocInlineSpan(text: secondText)],
+      plainText: secondText,
+      textAlign: block.textAlign,
+    );
+
+    return (first: firstBlock, second: secondBlock);
+  }
+
   /// Finds the page number containing the given reading position.
   int findPageForPosition(PaginatedChapter chapter, ReadingPosition position) {
     for (int i = 0; i < chapter.pages.length; i++) {
@@ -141,7 +217,6 @@ class PaginationEngine {
         return i;
       }
     }
-    // Fallback: return last page
     return (chapter.pages.length - 1).clamp(0, chapter.pages.length - 1);
   }
 
@@ -175,11 +250,9 @@ class PaginationEngine {
         return _measureText(block, availableWidth, settings, settings.fontSize + 2) + 2;
 
       case ContentBlockType.image:
-        // Estimate image height: use a reasonable default (width-proportional)
         if (block.imageData != null) {
-          // Default to 60% of available width with 4:3 aspect ratio
           final imageWidth = availableWidth * 0.9;
-          return imageWidth * 0.75; // Conservative estimate
+          return imageWidth * 0.75;
         }
         return 0;
 

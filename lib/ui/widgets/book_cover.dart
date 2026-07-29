@@ -2,9 +2,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
-/// Renders book covers categorized into 2 types:
-/// Type 1: Image of the first page / cover if available.
-/// Type 2: Default stylized Material 3 cover with title & author if no image available.
+/// Renders book covers with cover-based reading progress:
+/// The completed portion (bottom) shows in full bright color with a smooth liquid wave crest,
+/// while the unread portion (top) is darkened.
 class BookCoverWidget extends StatelessWidget {
   final String title;
   final String author;
@@ -13,6 +13,7 @@ class BookCoverWidget extends StatelessWidget {
   final Uint8List? coverImageData;
   final double? width;
   final double? height;
+  final double progress; // 0.0 to 1.0
 
   const BookCoverWidget({
     super.key,
@@ -23,27 +24,41 @@ class BookCoverWidget extends StatelessWidget {
     this.coverImageData,
     this.width,
     this.height,
+    this.progress = 0.0,
   });
 
   @override
   Widget build(BuildContext context) {
     final computedHeight = height ?? (width != null ? width! / 0.67 : null);
+    final clampedProgress = progress.clamp(0.0, 1.0);
+
+    Widget baseCover;
 
     // Type 1: Check if cover image is provided as bytes
     if (coverImageData != null && coverImageData!.isNotEmpty) {
-      return _buildImageCover(Image.memory(coverImageData!, fit: BoxFit.cover), computedHeight);
+      baseCover = _buildImageCover(Image.memory(coverImageData!, fit: BoxFit.cover), computedHeight);
+    } else if (coverPath != null && coverPath!.isNotEmpty && File(coverPath!).existsSync()) {
+      // Type 1: Check if cover image file exists
+      baseCover = _buildImageCover(Image.file(File(coverPath!), fit: BoxFit.cover), computedHeight);
+    } else {
+      // Type 2: Default stylized cover page
+      baseCover = _buildDefaultStylizedCover(context, computedHeight);
     }
 
-    // Type 1: Check if cover image is provided as a file path that exists
-    if (coverPath != null && coverPath!.isNotEmpty) {
-      final file = File(coverPath!);
-      if (file.existsSync()) {
-        return _buildImageCover(Image.file(file, fit: BoxFit.cover), computedHeight);
-      }
-    }
+    // Wrap base cover with cover-based wavy liquid progress overlay
+    return Stack(
+      children: [
+        baseCover,
 
-    // Type 2: Default stylized cover page
-    return _buildDefaultStylizedCover(context, computedHeight);
+        // Wavy liquid progress overlay (darkens unread top section)
+        Positioned.fill(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _WavyCoverProgressOverlay(progress: clampedProgress),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Builds a Type 1 cover image container with book frame shadows and spine detail.
@@ -168,7 +183,6 @@ class BookCoverWidget extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Decorative line
                 Container(
                   width: 24,
                   height: 2,
@@ -178,7 +192,6 @@ class BookCoverWidget extends StatelessWidget {
                   ),
                 ),
                 const Spacer(flex: 1),
-                // Title
                 Text(
                   title,
                   style: TextStyle(
@@ -198,7 +211,6 @@ class BookCoverWidget extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 6),
-                // Author
                 Text(
                   author,
                   style: TextStyle(
@@ -211,7 +223,6 @@ class BookCoverWidget extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const Spacer(flex: 2),
-                // Bottom decorative element
                 Container(
                   width: 16,
                   height: 2,
@@ -244,5 +255,77 @@ class BookCoverWidget extends StatelessWidget {
 
     final hash = bookId.codeUnits.fold<int>(0, (a, b) => a + b);
     return palettes[hash % palettes.length];
+  }
+}
+
+/// Overlay that darkens the unread portion (top) of a cover with a wavy liquid crest line.
+class _WavyCoverProgressOverlay extends StatelessWidget {
+  final double progress;
+
+  const _WavyCoverProgressOverlay({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    if (progress <= 0.0) {
+      return Container(color: Colors.black.withValues(alpha: 0.55));
+    }
+    if (progress >= 1.0) {
+      return const SizedBox.shrink();
+    }
+
+    return CustomPaint(
+      painter: _CoverWaveDarkenPainter(progress: progress),
+    );
+  }
+}
+
+class _CoverWaveDarkenPainter extends CustomPainter {
+  final double progress;
+
+  _CoverWaveDarkenPainter({required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final liquidY = size.height * (1.0 - progress);
+
+    final darkPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.58)
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    path.moveTo(0, 0);
+    path.lineTo(size.width, 0);
+    path.lineTo(size.width, liquidY + 2);
+
+    path.quadraticBezierTo(
+      size.width * 0.5,
+      liquidY - 4,
+      0,
+      liquidY + 2,
+    );
+    path.close();
+
+    canvas.drawPath(path, darkPaint);
+
+    final waveLinePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final linePath = Path();
+    linePath.moveTo(0, liquidY + 2);
+    linePath.quadraticBezierTo(
+      size.width * 0.5,
+      liquidY - 4,
+      size.width,
+      liquidY + 2,
+    );
+
+    canvas.drawPath(linePath, waveLinePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CoverWaveDarkenPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }
