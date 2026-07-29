@@ -97,7 +97,8 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen>
                         Navigator.pushNamed(context, '/reader', arguments: {
                           'bookId': widget.bookId,
                           'startChapter': progress.currentChapter,
-                        });
+                          'startPage': progress.positionInChapter.toInt(),
+                        }).then((_) => setState(() {}));
                       },
                       icon: Icon(
                         progress.overallPercent > 0

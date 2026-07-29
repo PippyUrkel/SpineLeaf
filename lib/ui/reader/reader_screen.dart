@@ -16,11 +16,13 @@ import 'pdf_reader.dart';
 class ReaderScreen extends ConsumerStatefulWidget {
   final String bookId;
   final int startChapter;
+  final int startPage;
 
   const ReaderScreen({
     super.key,
     required this.bookId,
     this.startChapter = 0,
+    this.startPage = 0,
   });
 
   @override
@@ -40,7 +42,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // Pagination state
   final PaginationEngine _paginationEngine = PaginationEngine();
   PaginatedChapter? _paginatedChapter;
-  int _currentPage = 0;
+  late int _currentPage;
   bool _isPaginationReady = false;
 
   // Structured document state (if available)
@@ -54,6 +56,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void initState() {
     super.initState();
     _currentChapter = widget.startChapter;
+    _currentPage = widget.startPage;
     _controlsAnimation = AnimationController(
       duration: kFastAnimation,
       vsync: this,

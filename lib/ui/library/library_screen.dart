@@ -12,6 +12,7 @@ final librarySortProvider = StateProvider<LibrarySort>((ref) => LibrarySort.rece
 final libraryFilterProvider = StateProvider<BookStatus?>((ref) => null);
 final librarySearchProvider = StateProvider<String>((ref) => '');
 final libraryViewModeProvider = StateProvider<bool>((ref) => true); // true = grid, false = list
+final libraryGridColumnsProvider = StateProvider<int>((ref) => 2); // 2, 3, 4, 5 columns
 final libraryRefreshProvider = StateProvider<int>((ref) => 0);
 
 class LibraryScreen extends ConsumerWidget {
@@ -24,6 +25,7 @@ class LibraryScreen extends ConsumerWidget {
     final filter = ref.watch(libraryFilterProvider);
     final search = ref.watch(librarySearchProvider);
     final isGrid = ref.watch(libraryViewModeProvider);
+    final gridColumns = ref.watch(libraryGridColumnsProvider);
     ref.watch(libraryRefreshProvider); // triggers rebuild
 
     final books = repo.getBooksWithProgress(
@@ -35,7 +37,7 @@ class LibraryScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SpineLeaf'),
+        title: const Text('Library'),
         actions: [
           // Explicit View Switcher Menu (Grid vs List)
           SegmentedButton<bool>(
@@ -61,7 +63,32 @@ class LibraryScreen extends ConsumerWidget {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          // Grid Columns Dropdown Menu (when grid view is active)
+          if (isGrid)
+            PopupMenuButton<int>(
+              icon: const Icon(Icons.view_column_outlined),
+              tooltip: 'Grid Columns',
+              initialValue: gridColumns,
+              onSelected: (value) {
+                ref.read(libraryGridColumnsProvider.notifier).state = value;
+              },
+              itemBuilder: (context) => [2, 3, 4, 5].map((cols) {
+                return PopupMenuItem<int>(
+                  value: cols,
+                  child: Row(
+                    children: [
+                      if (cols == gridColumns) ...[
+                        Icon(Icons.check, size: 18, color: context.colorScheme.primary),
+                        const SizedBox(width: 8),
+                      ],
+                      Text('$cols Columns'),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          const SizedBox(width: 4),
           // Sort menu
           PopupMenuButton<LibrarySort>(
             icon: const Icon(Icons.sort),
@@ -90,35 +117,35 @@ class LibraryScreen extends ConsumerWidget {
       body: CustomScrollView(
         slivers: [
           // Search bar
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: SearchBar(
-                hintText: 'Search books...',
-                leading: const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: Icon(Icons.search),
-                ),
-                trailing: search.isNotEmpty
-                    ? [
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            ref.read(librarySearchProvider.notifier).state = '';
-                          },
-                        ),
-                      ]
-                    : null,
-                onChanged: (value) {
-                  ref.read(librarySearchProvider.notifier).state = value;
-                },
-                elevation: const WidgetStatePropertyAll(0),
-                backgroundColor: WidgetStatePropertyAll(
-                  context.colorScheme.surfaceContainerHigh,
-                ),
-              ),
-            ),
-          ),
+          // SliverToBoxAdapter(
+          //   child: Padding(
+          //     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          //     child: SearchBar(
+          //       hintText: 'Search books...',
+          //       leading: const Padding(
+          //         padding: EdgeInsets.only(left: 8),
+          //         child: Icon(Icons.search),
+          //       ),
+          //       trailing: search.isNotEmpty
+          //           ? [
+          //               IconButton(
+          //                 icon: const Icon(Icons.close),
+          //                 onPressed: () {
+          //                   ref.read(librarySearchProvider.notifier).state = '';
+          //                 },
+          //               ),
+          //             ]
+          //           : null,
+          //       onChanged: (value) {
+          //         ref.read(librarySearchProvider.notifier).state = value;
+          //       },
+          //       elevation: const WidgetStatePropertyAll(0),
+          //       backgroundColor: WidgetStatePropertyAll(
+          //         context.colorScheme.surfaceContainerHigh,
+          //       ),
+          //     ),
+          //   ),
+          // ),
 
           // Filter chips
           SliverToBoxAdapter(
@@ -215,11 +242,11 @@ class LibraryScreen extends ConsumerWidget {
                   ),
                   childCount: books.length,
                 ),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.54,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: gridColumns,
+                  childAspectRatio: gridColumns >= 4 ? 0.46 : (gridColumns == 3 ? 0.50 : 0.54),
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
                 ),
               ),
             )
@@ -335,6 +362,9 @@ class _ContinueReadingCard extends ConsumerWidget {
             Navigator.pushNamed(context, '/reader', arguments: {
               'bookId': book.id,
               'startChapter': progress?.currentChapter ?? 0,
+              'startPage': progress?.positionInChapter.toInt() ?? 0,
+            }).then((_) {
+              ref.read(libraryRefreshProvider.notifier).state++;
             });
           },
           child: Padding(
@@ -406,6 +436,9 @@ class _ContinueReadingCard extends ConsumerWidget {
                     Navigator.pushNamed(context, '/reader', arguments: {
                       'bookId': book.id,
                       'startChapter': progress?.currentChapter ?? 0,
+                      'startPage': progress?.positionInChapter.toInt() ?? 0,
+                    }).then((_) {
+                      ref.read(libraryRefreshProvider.notifier).state++;
                     });
                   },
                   icon: const Icon(Icons.play_arrow),
@@ -432,7 +465,7 @@ class _BookGridCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.pushNamed(context, '/book-details', arguments: book.id);
+        Navigator.pushNamed(context, '/book-details', arguments: book.id).then((_) => onRefresh());
       },
       onLongPress: () => _showContextMenu(context, book),
       child: Column(
@@ -521,7 +554,7 @@ class _BookListTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () {
-          Navigator.pushNamed(context, '/book-details', arguments: book.id);
+          Navigator.pushNamed(context, '/book-details', arguments: book.id).then((_) => onRefresh());
         },
         onLongPress: () {
           showModalBottomSheet(
@@ -619,9 +652,12 @@ class _BookActionsSheet extends ConsumerWidget {
             title: const Text('Read'),
             onTap: () {
               Navigator.pop(context);
+              final progress = ref.read(bookRepositoryProvider).getProgress(book.id);
               Navigator.pushNamed(context, '/reader', arguments: {
                 'bookId': book.id,
-              });
+                'startChapter': progress.currentChapter,
+                'startPage': progress.positionInChapter.toInt(),
+              }).then((_) => onRefresh());
             },
           ),
           ListTile(
@@ -629,7 +665,7 @@ class _BookActionsSheet extends ConsumerWidget {
             title: const Text('Book Details'),
             onTap: () {
               Navigator.pop(context);
-              Navigator.pushNamed(context, '/book-details', arguments: book.id);
+              Navigator.pushNamed(context, '/book-details', arguments: book.id).then((_) => onRefresh());
             },
           ),
           if (book.status != BookStatus.completed)

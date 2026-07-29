@@ -73,6 +73,7 @@ class _SpineLeafAppState extends ConsumerState<SpineLeafApp> {
               builder: (_) => ReaderScreen(
                 bookId: args['bookId'] as String,
                 startChapter: args['startChapter'] as int? ?? 0,
+                startPage: args['startPage'] as int? ?? 0,
               ),
             );
           case '/book-details':
