@@ -46,6 +46,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Timer? _interstitialTimer;
   int _interstitialSecondsRemaining = 5;
 
+  // PDF state
+  int _pdfTotalPages = 1;
+
   // Pagination state
   final PaginationEngine _paginationEngine = PaginationEngine();
   PaginatedChapter? _paginatedChapter;
@@ -179,10 +182,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       updatedRead.add(i);
     }
 
-    final totalPages = _paginatedChapter?.pageCount ?? 1;
-    final pagePosition = totalPages > 0 ? (_currentPage / totalPages).clamp(0.0, 1.0) : 0.0;
+    final book = repo.getBook(widget.bookId);
+    final isPdf = book?.format == BookFormat.pdf;
 
-    final overallPercent = _calculateProgress(chapters, prefsRepo.settings);
+    final pagePosition = isPdf
+        ? (_pdfTotalPages > 0 ? (_currentPage / _pdfTotalPages).clamp(0.0, 1.0) : 0.0)
+        : ((_paginatedChapter?.pageCount ?? 1) > 0 ? (_currentPage / (_paginatedChapter?.pageCount ?? 1)).clamp(0.0, 1.0) : 0.0);
+
+    final overallPercent = isPdf && _pdfTotalPages > 0
+        ? (_currentPage / _pdfTotalPages).clamp(0.0, 1.0)
+        : _calculateProgress(chapters, prefsRepo.settings);
 
     repo.updateProgress(progress.copyWith(
       currentChapter: _currentChapter,
@@ -194,7 +203,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       lastReadAt: DateTime.now(),
     ));
 
-    final book = repo.getBook(widget.bookId);
     if (book != null) {
       repo.updateBook(book.copyWith(lastOpened: DateTime.now()));
     }
@@ -504,7 +512,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
     Widget readingSurface;
     if (isPdf) {
-      readingSurface = _buildPdfReader(book, readingTheme);
+      readingSurface = _buildPdfReader(book, readingTheme, settings.scrollMode);
     } else if (settings.scrollMode) {
       readingSurface = _buildScrollReader(chapter, settings, readingTheme, repo);
     } else {
@@ -1235,7 +1243,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   // ─── PDF Reader ───────────────────────────────────────────────────────
 
-  Widget _buildPdfReader(Book book, ReadingTheme readingTheme) {
+  Widget _buildPdfReader(Book book, ReadingTheme readingTheme, bool isScrollMode) {
     final filePath = book.filePath ?? book.description ?? '';
     final file = File(filePath);
 
@@ -1244,12 +1252,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         filePath: filePath,
         readingTheme: readingTheme,
         initialPage: _currentPage,
+        isScrollMode: isScrollMode,
         onCenterTap: _toggleControls,
         onWordLookup: _lookupWord,
         onPageChanged: (page, totalPages) {
           setState(() {
             _currentPage = page;
+            _pdfTotalPages = totalPages;
           });
+          _saveProgress();
         },
       );
     }

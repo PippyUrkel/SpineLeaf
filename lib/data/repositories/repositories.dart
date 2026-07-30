@@ -483,6 +483,7 @@ class PreferencesRepository {
   static const _themeModeKey = 'theme_mode';
   static const _colorSeedKey = 'color_seed';
   static const _welcomeBookletSeededKey = 'has_seeded_welcome_booklet';
+  static const _gridColumnsKey = 'library_grid_columns';
 
   ReaderSettings _settings = const ReaderSettings();
   ReaderSettings get settings => _settings;
@@ -496,8 +497,14 @@ class PreferencesRepository {
   bool _hasSeededWelcomeBooklet = false;
   bool get hasSeededWelcomeBooklet => _hasSeededWelcomeBooklet;
 
+  int _gridColumns = 3; // Default to 3 columns
+  int get gridColumns => _gridColumns;
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Grid columns
+    _gridColumns = prefs.getInt(_gridColumnsKey) ?? 3;
 
     // Reader settings
     final settingsJson = prefs.getString(_settingsKey);
@@ -545,6 +552,12 @@ class PreferencesRepository {
     _hasSeededWelcomeBooklet = seeded;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_welcomeBookletSeededKey, seeded);
+  }
+
+  Future<void> saveGridColumns(int columns) async {
+    _gridColumns = columns;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_gridColumnsKey, columns);
   }
 }
 

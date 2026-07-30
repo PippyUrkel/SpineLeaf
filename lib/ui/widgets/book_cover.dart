@@ -128,24 +128,6 @@ class BookCoverWidget extends StatelessWidget {
       computedHeight,
     );
   }
-
-  List<Color> _getCoverColors(String bookId) {
-    final palettes = [
-      [const Color(0xFF1A237E), const Color(0xFF283593)],  // Deep Indigo
-      [const Color(0xFF4A148C), const Color(0xFF6A1B9A)],  // Deep Purple
-      [const Color(0xFF004D40), const Color(0xFF00695C)],  // Teal
-      [const Color(0xFFBF360C), const Color(0xFFD84315)],  // Deep Orange
-      [const Color(0xFF1B5E20), const Color(0xFF2E7D32)],  // Green
-      [const Color(0xFF880E4F), const Color(0xFFAD1457)],  // Pink
-      [const Color(0xFF0D47A1), const Color(0xFF1565C0)],  // Blue
-      [const Color(0xFF3E2723), const Color(0xFF4E342E)],  // Brown
-      [const Color(0xFF263238), const Color(0xFF37474F)],  // Blue Grey
-      [const Color(0xFF311B92), const Color(0xFF4527A0)],  // Deep Purple 2
-    ];
-
-    final hash = bookId.codeUnits.fold<int>(0, (a, b) => a + b);
-    return palettes[hash % palettes.length];
-  }
 }
 
 /// Overlay that darkens the unread portion (top) of a cover with a wavy liquid crest line.

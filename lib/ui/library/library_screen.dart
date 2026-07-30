@@ -12,7 +12,9 @@ final librarySortProvider = StateProvider<LibrarySort>((ref) => LibrarySort.rece
 final libraryFilterProvider = StateProvider<BookStatus?>((ref) => null);
 final librarySearchProvider = StateProvider<String>((ref) => '');
 final libraryViewModeProvider = StateProvider<bool>((ref) => true); // true = grid, false = list
-final libraryGridColumnsProvider = StateProvider<int>((ref) => 2); // 2, 3, 4, 5 columns
+final libraryGridColumnsProvider = StateProvider<int>((ref) {
+  return ref.watch(preferencesRepositoryProvider).gridColumns;
+});
 final libraryRefreshProvider = StateProvider<int>((ref) => 0);
 
 class LibraryScreen extends ConsumerWidget {
@@ -72,6 +74,7 @@ class LibraryScreen extends ConsumerWidget {
               initialValue: gridColumns,
               onSelected: (value) {
                 ref.read(libraryGridColumnsProvider.notifier).state = value;
+                ref.read(preferencesRepositoryProvider).saveGridColumns(value);
               },
               itemBuilder: (context) => [2, 3, 4, 5].map((cols) {
                 return PopupMenuItem<int>(

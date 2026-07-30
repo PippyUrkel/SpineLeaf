@@ -46,72 +46,82 @@ class DictionarySheet extends StatelessWidget {
               ],
             ),
 
-            if (isLoading) ...[
-              const SizedBox(height: 32),
-              const Center(child: CircularProgressIndicator()),
-              const SizedBox(height: 16),
-              Center(
-                child: Text(
-                  'Looking up "$word"...',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ] else if (errorMessage != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.error_outline, color: theme.colorScheme.error),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        errorMessage!,
-                        style: TextStyle(color: theme.colorScheme.error),
+                    if (isLoading) ...[
+                      const SizedBox(height: 32),
+                      const Center(child: CircularProgressIndicator()),
+                      const SizedBox(height: 16),
+                      Center(
+                        child: Text(
+                          'Looking up "$word"...',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 32),
+                    ] else if (errorMessage != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.error_outline, color: theme.colorScheme.error),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                errorMessage!,
+                                style: TextStyle(color: theme.colorScheme.error),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else if (entry != null) ...[
+                      // Pronunciation
+                      if (entry!.pronunciation != null) ...[
+                        Row(
+                          children: [
+                            Text(
+                              entry!.pronunciation!,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                            if (entry!.phoneticAudioUrl != null)
+                              IconButton(
+                                icon: Icon(Icons.volume_up,
+                                    size: 20, color: theme.colorScheme.primary),
+                                onPressed: () {
+                                  // Audio playback could be added here
+                                },
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // Definitions
+                      ...entry!.definitions.map((def) => _buildDefinition(context, def)),
+
+                      const SizedBox(height: 4),
+                    ],
                   ],
                 ),
               ),
-            ] else if (entry != null) ...[
-              // Pronunciation
-              if (entry!.pronunciation != null) ...[
-                Row(
-                  children: [
-                    Text(
-                      entry!.pronunciation!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    if (entry!.phoneticAudioUrl != null)
-                      IconButton(
-                        icon: Icon(Icons.volume_up,
-                            size: 20, color: theme.colorScheme.primary),
-                        onPressed: () {
-                          // Audio playback could be added here
-                        },
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Definitions
-              ...entry!.definitions.map((def) => _buildDefinition(context, def)),
-
-              const SizedBox(height: 4),
-            ],
+            ),
           ],
         ),
       ),

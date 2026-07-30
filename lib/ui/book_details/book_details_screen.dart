@@ -414,7 +414,7 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen>
               child: Row(
                 children: [
                   Text(
-                    '${chapters.length} chapters',
+                    book.format == BookFormat.pdf ? 'Document' : '${chapters.length} chapters',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       fontSize: 17,
@@ -464,7 +464,7 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen>
                               : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
               title: Text(
-                'Chapter ${index + 1}: ${chapter.title}',
+                book.format == BookFormat.pdf ? 'Full Document' : 'Chapter ${index + 1}: ${chapter.title}',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,

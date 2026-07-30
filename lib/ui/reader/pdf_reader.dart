@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../core/constants.dart';
 
@@ -11,6 +12,7 @@ class PdfReaderWidget extends StatefulWidget {
   final void Function(int page, int totalPages)? onPageChanged;
   final void Function(String word)? onWordLookup;
   final VoidCallback? onCenterTap;
+  final bool isScrollMode;
 
   const PdfReaderWidget({
     super.key,
@@ -20,6 +22,7 @@ class PdfReaderWidget extends StatefulWidget {
     this.onPageChanged,
     this.onWordLookup,
     this.onCenterTap,
+    this.isScrollMode = false,
   });
 
   @override
@@ -30,7 +33,6 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
   late final PdfViewerController _controller;
   late final PageController _pageController;
   PdfDocument? _pdfDocument;
-  bool _isPageFlipMode = true; // Page flipping mode by default
   int _currentPage = 0;
   int _totalPages = 0;
   bool _isLoadingDoc = true;
@@ -69,30 +71,21 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
     super.dispose();
   }
 
-  void _toggleMode() {
-    setState(() {
-      _isPageFlipMode = !_isPageFlipMode;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_isPageFlipMode && _pageController.hasClients) {
-        _pageController.jumpToPage(_currentPage);
-      } else if (!_isPageFlipMode) {
-        _controller.goToPage(pageNumber: _currentPage + 1);
-      }
-    });
+  @override
+  void didUpdateWidget(PdfReaderWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isScrollMode != widget.isScrollMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!widget.isScrollMode && _pageController.hasClients) {
+          _pageController.jumpToPage(_currentPage);
+        } else if (widget.isScrollMode) {
+          _controller.goToPage(pageNumber: _currentPage + 1);
+        }
+      });
+    }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoadingDoc) {
-      return Container(
-        color: widget.readingTheme.backgroundColor,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
+  Widget _buildSelectionInjector(BuildContext context, Widget child) {
     return SelectionArea(
       onSelectionChanged: (content) {
         _selectedPdfText = content?.plainText.trim() ?? '';
@@ -117,7 +110,8 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
             if (_selectedPdfText.isNotEmpty)
               TextButton.icon(
                 onPressed: () {
-                  selectableRegionState.copySelection(SelectionChangedCause.toolbar);
+                  Clipboard.setData(ClipboardData(text: _selectedPdfText));
+                  selectableRegionState.hideToolbar();
                 },
                 icon: const Icon(Icons.copy, size: 16),
                 label: const Text('Copy', style: TextStyle(fontSize: 12)),
@@ -129,13 +123,28 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
           ],
         );
       },
-      child: Stack(
-        children: [
-          // Main Viewer
-          Container(
-            color: widget.readingTheme.backgroundColor,
-            child: _isPageFlipMode ? _buildPageFlipViewer() : _buildScrollViewer(),
-          ),
+      child: child,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoadingDoc) {
+      return Container(
+        color: widget.readingTheme.backgroundColor,
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        // Main Viewer
+        Container(
+          color: widget.readingTheme.backgroundColor,
+          child: !widget.isScrollMode ? _buildPageFlipViewer() : _buildScrollViewer(),
+        ),
 
           // Center Tap Detector (Transparent overlay for controls toggle without blocking gestures)
           Positioned.fill(
@@ -157,43 +166,6 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
             ),
           ),
 
-          // Mode Toggle Button (Top Right)
-          Positioned(
-            top: 12,
-            right: 12,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: _toggleMode,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _isPageFlipMode ? Icons.auto_stories : Icons.swap_vert,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _isPageFlipMode ? 'Page Flip' : 'Scroll',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
 
           // Page Indicator (Bottom Center)
           if (_totalPages > 0)
@@ -219,11 +191,10 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
               ),
             ),
         ],
-      ),
-    );
+      );
   }
 
-  /// Page-by-page snapping viewer using PageView and _ZoomablePdfPage
+  /// Page-by-page snapping viewer using PageView and PdfPageView
   Widget _buildPageFlipViewer() {
     if (_pdfDocument == null || _totalPages == 0) {
       return const Center(child: Text('Empty document'));
@@ -237,9 +208,12 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
         widget.onPageChanged?.call(_currentPage, _totalPages);
       },
       itemBuilder: (context, index) {
-        return _ZoomablePdfPage(
-          document: _pdfDocument!,
-          pageNumber: index + 1,
+        return Center(
+          child: PdfPageView(
+            document: _pdfDocument!,
+            pageNumber: index + 1,
+            maximumDpi: 300,
+          ),
         );
       },
     );
@@ -252,6 +226,7 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
       controller: _controller,
       params: PdfViewerParams(
         enableTextSelection: true,
+        selectableRegionInjector: _buildSelectionInjector,
         onPageChanged: (page) {
           if (page != null) {
             setState(() => _currentPage = page - 1);
@@ -274,7 +249,7 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
   void goToPage(int page) {
     if (page >= 0 && page < _totalPages) {
       _currentPage = page;
-      if (_isPageFlipMode && _pageController.hasClients) {
+      if (!widget.isScrollMode && _pageController.hasClients) {
         _pageController.animateToPage(
           page,
           duration: const Duration(milliseconds: 250),
@@ -291,63 +266,4 @@ class _PdfReaderWidgetState extends State<PdfReaderWidget> {
 
   /// Get total page count.
   int get totalPages => _totalPages;
-}
-
-/// Zoomable PDF page component that dynamically recalculates DPI resolution when zoomed in
-class _ZoomablePdfPage extends StatefulWidget {
-  final PdfDocument document;
-  final int pageNumber;
-
-  const _ZoomablePdfPage({
-    required this.document,
-    required this.pageNumber,
-  });
-
-  @override
-  State<_ZoomablePdfPage> createState() => _ZoomablePdfPageState();
-}
-
-class _ZoomablePdfPageState extends State<_ZoomablePdfPage> {
-  late final TransformationController _transformationController;
-  double _currentDpi = 300;
-
-  @override
-  void initState() {
-    super.initState();
-    _transformationController = TransformationController();
-    _transformationController.addListener(_onScaleChanged);
-  }
-
-  void _onScaleChanged() {
-    final scale = _transformationController.value.getMaxScaleOnAxis();
-    final newDpi = (300 * scale).clamp(300, 1200).toDouble();
-    if ((newDpi - _currentDpi).abs() > 50) {
-      setState(() {
-        _currentDpi = newDpi;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _transformationController.removeListener(_onScaleChanged);
-    _transformationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InteractiveViewer(
-      transformationController: _transformationController,
-      minScale: 1.0,
-      maxScale: 4.0,
-      child: Center(
-        child: PdfPageView(
-          document: widget.document,
-          pageNumber: widget.pageNumber,
-          maximumDpi: _currentDpi,
-        ),
-      ),
-    );
-  }
 }

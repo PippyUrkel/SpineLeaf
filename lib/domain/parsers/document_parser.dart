@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../core/constants.dart';
 import '../../data/models/models.dart';
@@ -66,7 +67,7 @@ class PdfParser implements DocumentParser {
       }
     } catch (e) {
       // Ignore errors generating thumbnail
-      print('Failed to generate PDF thumbnail: $e');
+      debugPrint('Failed to generate PDF thumbnail: $e');
     }
     
     final book = Book(
