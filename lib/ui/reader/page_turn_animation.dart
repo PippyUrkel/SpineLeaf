@@ -51,14 +51,14 @@ class PageTurnWidgetState extends State<PageTurnWidget>
 
   /// Programmatically turns to the next page with slide animation
   void turnToNext() {
-    if (_isAnimating || widget.currentPage >= widget.totalPages - 1) return;
+    if (_isAnimating) return;
     final screenWidth = MediaQuery.of(context).size.width;
     _animateToOffset(-screenWidth, widget.currentPage + 1);
   }
 
   /// Programmatically turns to the previous page with slide animation
   void turnToPrevious() {
-    if (_isAnimating || widget.currentPage <= 0) return;
+    if (_isAnimating) return;
     final screenWidth = MediaQuery.of(context).size.width;
     _animateToOffset(screenWidth, widget.currentPage - 1);
   }
@@ -125,10 +125,10 @@ class PageTurnWidgetState extends State<PageTurnWidget>
     int direction = 0; // -1 = next (drag left), 1 = previous (drag right)
 
     if (fraction.abs() > _swipeThreshold || velocity.abs() > _velocityThreshold) {
-      if (_dragOffset > 0 && widget.currentPage > 0) {
+      if (_dragOffset > 0) {
         shouldTurn = true;
         direction = 1;
-      } else if (_dragOffset < 0 && widget.currentPage < widget.totalPages - 1) {
+      } else if (_dragOffset < 0) {
         shouldTurn = true;
         direction = -1;
       }

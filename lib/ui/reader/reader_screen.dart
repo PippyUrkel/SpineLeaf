@@ -14,6 +14,7 @@ import 'page_turn_animation.dart';
 import 'pagination_engine.dart';
 import 'reflowable_reader.dart';
 import 'pdf_reader.dart';
+import '../../domain/parsers/epub_parser.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final String bookId;
@@ -62,6 +63,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   // Key to control the PageTurnWidget dynamically
   final GlobalKey<PageTurnWidgetState> _pageTurnKey = GlobalKey<PageTurnWidgetState>();
+  
+  bool _isLoadingStructuredDoc = false;
 
   @override
   void initState() {
@@ -74,6 +77,42 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
     _sessionStartTime = DateTime.now();
     _startReadingTimer();
+    _loadStructuredDoc();
+  }
+
+  Future<void> _loadStructuredDoc() async {
+    setState(() {
+      _isLoadingStructuredDoc = true;
+    });
+    
+    try {
+      final repo = ref.read(bookRepositoryProvider);
+      final book = repo.getBook(widget.bookId);
+      if (book != null && book.format == BookFormat.epub && book.filePath != null) {
+        final parser = StructuredEpubParser();
+        final result = await parser.parse(File(book.filePath!));
+        if (mounted) {
+          setState(() {
+            _structuredDoc = result.document;
+            _isLoadingStructuredDoc = false;
+            _isPaginationReady = false;
+            _paginatedChapter = null;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isLoadingStructuredDoc = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingStructuredDoc = false;
+        });
+      }
+    }
   }
 
   void _startReadingTimer() {
@@ -444,8 +483,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       );
     }
 
-    final chapter = chapters[_currentChapter.clamp(0, chapters.length - 1)];
     final readingTheme = settings.readingTheme;
+
+    if (_isLoadingStructuredDoc) {
+      return Scaffold(
+        backgroundColor: readingTheme.backgroundColor,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final chapter = chapters[_currentChapter.clamp(0, chapters.length - 1)];
     final isPdf = book.format == BookFormat.pdf;
 
     Widget readingSurface;
@@ -916,8 +963,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               totalPages: maxPagesInChapter,
               pageBuilder: buildSinglePage,
               onPageChanged: (newPage) {
-                if (newPage >= totalPages) {
+                if (newPage > totalPages) {
                   _goToChapter(_currentChapter + 1);
+                } else if (newPage < 0) {
+                  if (_currentChapter > 0) {
+                    _goToChapter(_currentChapter - 1, targetPage: 999999);
+                  }
                 } else {
                   _goToPage(newPage);
                 }
@@ -1682,6 +1733,7 @@ class _SettingsSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final clampedValue = value.clamp(min, max);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -1695,7 +1747,7 @@ class _SettingsSlider extends StatelessWidget {
             ],
           ),
           Slider(
-            value: value,
+            value: clampedValue,
             min: min,
             max: max,
             onChanged: onChanged,

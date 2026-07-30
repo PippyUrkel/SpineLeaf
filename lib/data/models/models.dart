@@ -377,15 +377,21 @@ class ReaderSettings {
   };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
+    final rawFontSize = (json['fontSize'] as num?)?.toDouble() ?? 18.0;
+    final rawLineHeight = (json['lineHeight'] as num?)?.toDouble() ?? 1.6;
+    final rawMargin = (json['margin'] as num?)?.toDouble() ?? 24.0;
+    final rawThemeIndex = json['readingTheme'] as int? ?? 0;
+    final rawAlignIndex = json['textAlign'] as int? ?? 0;
+
     return ReaderSettings(
       fontFamily: json['fontFamily'] as String? ?? 'Literata',
-      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 18.0,
+      fontSize: rawFontSize.clamp(kMinFontSize, kMaxFontSize),
       fontWeight: FontWeight.values.firstWhere((w) => w.value == (json['fontWeightIndex'] as int? ?? 400), orElse: () => FontWeight.w400),
-      lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.6,
+      lineHeight: rawLineHeight.clamp(kMinLineHeight, kMaxLineHeight),
       paragraphSpacing: (json['paragraphSpacing'] as num?)?.toDouble() ?? 12.0,
-      textAlign: ReaderTextAlign.values[json['textAlign'] as int? ?? 0],
-      margin: (json['margin'] as num?)?.toDouble() ?? 24.0,
-      readingTheme: ReadingTheme.values[json['readingTheme'] as int? ?? 0],
+      textAlign: ReaderTextAlign.values[rawAlignIndex.clamp(0, ReaderTextAlign.values.length - 1)],
+      margin: rawMargin.clamp(kMinMargin, kMaxMargin),
+      readingTheme: ReadingTheme.values[rawThemeIndex.clamp(0, ReadingTheme.values.length - 1)],
       scrollMode: json['scrollMode'] as bool? ?? false,
     );
   }

@@ -174,7 +174,7 @@ class StructuredEpubParser {
 
     // Split into block-level elements
     final blockPattern = RegExp(
-      r'<(p|h[1-6]|div|blockquote|ul|ol|hr|img|pre|figure|figcaption)(\s[^>]*)?>(.*?)</\1>|<(hr|img|br)(\s[^>]*)?\s*/?>',
+      r'<(p|h[1-6]|div|blockquote|ul|ol|hr|img|pre|figure|figcaption|svg|image)(\s[^>]*)?>(.*?)</\1>|<(hr|img|br|image)(\s[^>]*)?\s*/?>',
       caseSensitive: false,
       dotAll: true,
     );
@@ -258,7 +258,12 @@ class StructuredEpubParser {
           break;
 
         case 'img':
+        case 'image':
           _addImageBlock(attrs, images, blocks);
+          break;
+
+        case 'svg':
+          _extractImagesFromHtml(innerHtml, images, blocks);
           break;
 
         case 'pre':
@@ -318,7 +323,7 @@ class StructuredEpubParser {
     Map<String, Uint8List> images,
     List<ContentBlock> blocks,
   ) {
-    final imgPattern = RegExp(r'<img\s+([^>]*)/?>', caseSensitive: false);
+    final imgPattern = RegExp(r'<(?:img|image)\s+([^>]*)/?>', caseSensitive: false);
     for (final match in imgPattern.allMatches(html)) {
       _addImageBlock(match.group(1) ?? '', images, blocks);
     }
@@ -330,8 +335,9 @@ class StructuredEpubParser {
     Map<String, Uint8List> images,
     List<ContentBlock> blocks,
   ) {
-    final srcMatch = RegExp(r'src="([^"]*)"', caseSensitive: false).firstMatch(attrs);
-    final altMatch = RegExp(r'alt="([^"]*)"', caseSensitive: false).firstMatch(attrs);
+    // Match src="..." or src='...' or href="..." or xlink:href="..."
+    final srcMatch = RegExp(r'''(?:src|href|xlink:href)=["']([^"']*)["']''', caseSensitive: false).firstMatch(attrs);
+    final altMatch = RegExp(r'''alt=["']([^"']*)["']''', caseSensitive: false).firstMatch(attrs);
 
     if (srcMatch != null) {
       final src = srcMatch.group(1) ?? '';
