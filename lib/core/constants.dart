@@ -13,7 +13,7 @@ const Duration kSlowAnimation = Duration(milliseconds: 500);
 
 // Reader defaults
 const double kDefaultFontSize = 18.0;
-const double kMinFontSize = 12.0;
+const double kMinFontSize = 14.0;
 const double kMaxFontSize = 36.0;
 const double kDefaultLineHeight = 1.6;
 const double kMinLineHeight = 1.0;

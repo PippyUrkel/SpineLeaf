@@ -168,6 +168,7 @@ class PaginationEngine {
         fontSize: fontSize,
         fontWeight: settings.fontWeight,
         height: settings.lineHeight,
+        letterSpacing: 0.2,
       )),
       textDirection: TextDirection.ltr,
       textAlign: block.textAlign ?? settings.textAlign.value,
@@ -268,6 +269,7 @@ class PaginationEngine {
               style: TextStyle(
                 fontSize: settings.fontSize,
                 height: settings.lineHeight,
+                letterSpacing: 0.2,
               ),
             ),
             textDirection: TextDirection.ltr,
@@ -299,6 +301,7 @@ class PaginationEngine {
       fontSize: fontSize,
       fontWeight: block.isHeading ? FontWeight.bold : settings.fontWeight,
       height: settings.lineHeight,
+      letterSpacing: 0.2,
     ));
 
     final tp = TextPainter(

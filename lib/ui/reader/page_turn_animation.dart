@@ -1,21 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// A page turn animation widget that provides smooth horizontal page transitions.
-/// Wraps content and handles swipe gestures for page navigation.
+/// A page turn animation widget that provides realistic, dynamic page transitions.
+/// Renders both current and target page content simultaneously with 1:1 touch tracking.
 class PageTurnWidget extends StatefulWidget {
-  /// Builder for the page content at the given index.
   final Widget Function(int pageIndex) pageBuilder;
-
-  /// Current page index.
   final int currentPage;
-
-  /// Total number of pages.
   final int totalPages;
-
-  /// Called when the user navigates to a new page.
   final void Function(int newPage) onPageChanged;
-
-  /// Animation duration.
   final Duration duration;
 
   const PageTurnWidget({
@@ -28,19 +19,20 @@ class PageTurnWidget extends StatefulWidget {
   });
 
   @override
-  State<PageTurnWidget> createState() => _PageTurnWidgetState();
+  State<PageTurnWidget> createState() => PageTurnWidgetState();
 }
 
-class _PageTurnWidgetState extends State<PageTurnWidget>
+class PageTurnWidgetState extends State<PageTurnWidget>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
+  Animation<double>? _offsetAnimation;
   double _dragOffset = 0;
   bool _isDragging = false;
+  bool _isAnimating = false;
+  int? _targetPage;
 
-  // Threshold for completing a page turn (fraction of screen width)
-  static const _swipeThreshold = 0.25;
-  // Minimum velocity to trigger a page turn
-  static const _velocityThreshold = 300.0;
+  static const _swipeThreshold = 0.20;
+  static const _velocityThreshold = 250.0;
 
   @override
   void initState() {
@@ -49,14 +41,6 @@ class _PageTurnWidgetState extends State<PageTurnWidget>
       vsync: this,
       duration: widget.duration,
     );
-    _animController.addListener(() {
-      setState(() {});
-    });
-  }
-
-  @override
-  void didUpdateWidget(PageTurnWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
   }
 
   @override
@@ -65,21 +49,72 @@ class _PageTurnWidgetState extends State<PageTurnWidget>
     super.dispose();
   }
 
+  /// Programmatically turns to the next page with slide animation
+  void turnToNext() {
+    if (_isAnimating || widget.currentPage >= widget.totalPages - 1) return;
+    final screenWidth = MediaQuery.of(context).size.width;
+    _animateToOffset(-screenWidth, widget.currentPage + 1);
+  }
+
+  /// Programmatically turns to the previous page with slide animation
+  void turnToPrevious() {
+    if (_isAnimating || widget.currentPage <= 0) return;
+    final screenWidth = MediaQuery.of(context).size.width;
+    _animateToOffset(screenWidth, widget.currentPage - 1);
+  }
+
+  void _animateToOffset(double targetOffset, int targetPage) {
+    _isAnimating = true;
+    _targetPage = targetPage;
+    final startOffset = _dragOffset;
+
+    _animController.reset();
+    _offsetAnimation = Tween<double>(
+      begin: startOffset,
+      end: targetOffset,
+    ).animate(CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutCubic,
+    ));
+
+    void listener() {
+      if (mounted) {
+        setState(() {
+          _dragOffset = _offsetAnimation!.value;
+        });
+      }
+    }
+
+    _offsetAnimation!.addListener(listener);
+
+    _animController.forward().then((_) {
+      _offsetAnimation?.removeListener(listener);
+      _isAnimating = false;
+      _dragOffset = 0;
+      final target = _targetPage;
+      _targetPage = null;
+      if (target != null && target != widget.currentPage && mounted) {
+        widget.onPageChanged(target);
+      }
+    });
+  }
+
   void _onHorizontalDragStart(DragStartDetails details) {
+    if (_isAnimating) return;
     _isDragging = true;
     _dragOffset = 0;
     _animController.stop();
   }
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    if (!_isDragging) return;
+    if (!_isDragging || _isAnimating) return;
     setState(() {
       _dragOffset += details.primaryDelta ?? 0;
     });
   }
 
   void _onHorizontalDragEnd(DragEndDetails details) {
-    if (!_isDragging) return;
+    if (!_isDragging || _isAnimating) return;
     _isDragging = false;
 
     final screenWidth = MediaQuery.of(context).size.width;
@@ -87,72 +122,38 @@ class _PageTurnWidgetState extends State<PageTurnWidget>
     final velocity = details.primaryVelocity ?? 0;
 
     bool shouldTurn = false;
-    int direction = 0; // -1 = next, 1 = previous
+    int direction = 0; // -1 = next (drag left), 1 = previous (drag right)
 
     if (fraction.abs() > _swipeThreshold || velocity.abs() > _velocityThreshold) {
       if (_dragOffset > 0 && widget.currentPage > 0) {
-        // Swiped right -> previous page
         shouldTurn = true;
         direction = 1;
       } else if (_dragOffset < 0 && widget.currentPage < widget.totalPages - 1) {
-        // Swiped left -> next page
         shouldTurn = true;
         direction = -1;
       }
     }
 
     if (shouldTurn) {
-      final newPage = widget.currentPage - direction;
-
-      // Animate to completion
-      final startOffset = _dragOffset;
       final endOffset = direction * screenWidth;
-
-      _animController.reset();
-      _animController.addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          _dragOffset = 0;
-          widget.onPageChanged(newPage);
-        }
-      });
-
-      final animation = Tween<double>(
-        begin: startOffset,
-        end: endOffset,
-      ).animate(CurvedAnimation(
-        parent: _animController,
-        curve: Curves.easeOutCubic,
-      ));
-
-      animation.addListener(() {
-        _dragOffset = animation.value;
-      });
-
-      _animController.forward();
+      _animateToOffset(endOffset, widget.currentPage - direction);
     } else {
-      // Snap back
-      final startOffset = _dragOffset;
-      _animController.reset();
-
-      final animation = Tween<double>(
-        begin: startOffset,
-        end: 0.0,
-      ).animate(CurvedAnimation(
-        parent: _animController,
-        curve: Curves.easeOutCubic,
-      ));
-
-      animation.addListener(() {
-        _dragOffset = animation.value;
-      });
-
-      _animController.forward();
+      // Snap back if threshold not met
+      _animateToOffset(0, widget.currentPage);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
+
+    // Determine target page index for preview
+    int? previewPageIndex;
+    if (_dragOffset < 0 && widget.currentPage < widget.totalPages - 1) {
+      previewPageIndex = widget.currentPage + 1;
+    } else if (_dragOffset > 0 && widget.currentPage > 0) {
+      previewPageIndex = widget.currentPage - 1;
+    }
 
     return GestureDetector(
       onHorizontalDragStart: _onHorizontalDragStart,
@@ -162,7 +163,7 @@ class _PageTurnWidgetState extends State<PageTurnWidget>
       child: ClipRect(
         child: Stack(
           children: [
-            // Current page
+            // Current Page (slides with drag)
             Transform.translate(
               offset: Offset(_dragOffset, 0),
               child: SizedBox(
@@ -171,40 +172,35 @@ class _PageTurnWidgetState extends State<PageTurnWidget>
               ),
             ),
 
-            // Next/previous page (sliding in)
-            if (_dragOffset < 0 && widget.currentPage < widget.totalPages - 1)
+            // Incoming Page (slides in tandem with real content)
+            if (previewPageIndex != null)
               Transform.translate(
-                offset: Offset(screenWidth + _dragOffset, 0),
+                offset: Offset(
+                  _dragOffset < 0 ? (screenWidth + _dragOffset) : (-screenWidth + _dragOffset),
+                  0,
+                ),
                 child: SizedBox(
                   width: screenWidth,
-                  child: widget.pageBuilder(widget.currentPage + 1),
+                  child: widget.pageBuilder(previewPageIndex),
                 ),
               ),
 
-            if (_dragOffset > 0 && widget.currentPage > 0)
-              Transform.translate(
-                offset: Offset(-screenWidth + _dragOffset, 0),
-                child: SizedBox(
-                  width: screenWidth,
-                  child: widget.pageBuilder(widget.currentPage - 1),
-                ),
-              ),
-
-            // Subtle shadow on page edge during drag
-            if (_dragOffset.abs() > 1)
+            // Realistic book fold shadow along sliding boundary
+            if (_dragOffset.abs() > 2)
               Positioned(
-                left: _dragOffset < 0 ? null : _dragOffset - 8,
-                right: _dragOffset > 0 ? null : -_dragOffset - 8,
+                left: _dragOffset < 0 ? screenWidth + _dragOffset - 12 : null,
+                right: _dragOffset > 0 ? screenWidth - _dragOffset - 12 : null,
                 top: 0,
                 bottom: 0,
-                width: 8,
+                width: 12,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: _dragOffset < 0 ? Alignment.centerLeft : Alignment.centerRight,
                       end: _dragOffset < 0 ? Alignment.centerRight : Alignment.centerLeft,
                       colors: [
-                        Colors.black.withValues(alpha: 0.1),
+                        Colors.black.withValues(alpha: 0.25),
+                        Colors.black.withValues(alpha: 0.05),
                         Colors.transparent,
                       ],
                     ),

@@ -348,104 +348,139 @@ class _ContinueReadingCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final book = bookWithProgress.book;
     final progress = bookWithProgress.progress;
-    final chapters = ref.read(bookRepositoryProvider).getChapters(book.id);
-    final currentChapter = progress != null && chapters.isNotEmpty
-        ? chapters[progress.currentChapter.clamp(0, chapters.length - 1)]
+    final repo = ref.watch(bookRepositoryProvider);
+    final chapters = repo.getChapters(book.id);
+    final currentChapterIndex = progress?.currentChapter ?? 0;
+    final currentChapter = chapters.isNotEmpty
+        ? chapters[currentChapterIndex.clamp(0, chapters.length - 1)]
         : null;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () {
-            Navigator.pushNamed(context, '/reader', arguments: {
-              'bookId': book.id,
-              'startChapter': progress?.currentChapter ?? 0,
-              'startPage': progress?.positionInChapter.toInt() ?? 0,
-            }).then((_) {
-              ref.read(libraryRefreshProvider.notifier).state++;
-            });
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                // Book cover with wavy liquid progress fill
-                BookCoverWidget(
-                  title: book.title,
-                  author: book.author,
-                  bookId: book.id,
-                  coverPath: book.coverPath,
-                  progress: bookWithProgress.progressPercent,
-                  width: 72,
-                  height: 108,
-                ),
-                const SizedBox(width: 16),
-                // Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Continue Reading',
-                        style: context.textTheme.labelMedium?.copyWith(
-                          color: context.colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
+    return Card(
+      elevation: 0,
+      color: context.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: context.colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          Navigator.pushNamed(context, '/reader', arguments: {
+            'bookId': book.id,
+            'startChapter': progress?.currentChapter ?? 0,
+            'startPage': progress?.positionInChapter.toInt() ?? 0,
+          }).then((_) {
+            ref.read(libraryRefreshProvider.notifier).state++;
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Book cover thumbnail
+              BookCoverWidget(
+                title: book.title,
+                author: book.author,
+                bookId: book.id,
+                coverPath: book.coverPath,
+                progress: bookWithProgress.progressPercent,
+                width: 56,
+                height: 84,
+              ),
+              const SizedBox(width: 14),
+
+              // Info & Progress
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'CONTINUE READING',
+                      style: context.textTheme.labelSmall?.copyWith(
+                        color: context.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                        letterSpacing: 0.8,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        book.title,
-                        style: context.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      book.title,
+                      style: context.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (currentChapter != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        book.author,
-                        style: context.textTheme.bodySmall,
-                      ),
-                      if (currentChapter != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Ch. ${currentChapter.index + 1}: ${currentChapter.title}',
-                          style: context.textTheme.bodySmall?.copyWith(
-                            color: context.colorScheme.onSurfaceVariant,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        'Ch. ${currentChapter.index + 1}: ${currentChapter.title}',
+                        style: context.textTheme.bodySmall?.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                          fontSize: 12,
                         ),
-                      ],
-                      const SizedBox(height: 6),
-                      Text(
-                        '${bookWithProgress.progressPercent.asPercent} Completed',
-                        style: context.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: context.colorScheme.primary,
-                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                    const SizedBox(height: 8),
+                    // Progress Bar
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: LinearProgressIndicator(
+                              value: bookWithProgress.progressPercent,
+                              minHeight: 5,
+                              backgroundColor: context.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                              color: context.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          bookWithProgress.progressPercent.asPercent,
+                          style: context.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: context.colorScheme.primary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // Minimal Action Icon
+              FilledButton.tonal(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/reader', arguments: {
+                    'bookId': book.id,
+                    'startChapter': progress?.currentChapter ?? 0,
+                    'startPage': progress?.positionInChapter.toInt() ?? 0,
+                  }).then((_) {
+                    ref.read(libraryRefreshProvider.notifier).state++;
+                  });
+                },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                const SizedBox(width: 8),
-                FilledButton.tonalIcon(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/reader', arguments: {
-                      'bookId': book.id,
-                      'startChapter': progress?.currentChapter ?? 0,
-                      'startPage': progress?.positionInChapter.toInt() ?? 0,
-                    }).then((_) {
-                      ref.read(libraryRefreshProvider.notifier).state++;
-                    });
-                  },
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Read'),
-                ),
-              ],
-            ),
+                child: const Icon(Icons.play_arrow_rounded, size: 20),
+              ),
+            ],
           ),
         ),
       ),
@@ -598,6 +633,15 @@ class _BookListTile extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    if (bookWithProgress.progress?.lastReadAt != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        bookWithProgress.progress!.lastReadAt!.relativeTime,
+                        style: context.textTheme.labelSmall?.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
