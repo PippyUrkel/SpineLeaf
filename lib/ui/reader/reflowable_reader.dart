@@ -288,15 +288,17 @@ class ContentBlockRenderer extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(bottom: settings.paragraphSpacing),
       child: Container(
-        width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: readingTheme.surfaceColor,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: SelectableText.rich(
-          block.toTextSpan(baseStyle),
-          contextMenuBuilder: _contextMenuBuilder,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SelectableText.rich(
+            block.toTextSpan(baseStyle),
+            contextMenuBuilder: _contextMenuBuilder,
+          ),
         ),
       ),
     );

@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:pdfrx/pdfrx.dart';
 import '../../core/constants.dart';
 import '../../data/models/models.dart';
 import 'epub_parser.dart';
@@ -43,12 +45,37 @@ class PdfParser implements DocumentParser {
   Future<ParsedBook> parse(File file) async {
     final title = file.uri.pathSegments.last.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
     
+    // Generate cover from first page
+    String? coverPath;
+    try {
+      final doc = await PdfDocument.openFile(file.path);
+      if (doc.pages.isNotEmpty) {
+        final page = doc.pages[0];
+        // Render at a decent resolution for thumbnails
+        final pdfImage = await page.render(width: 400, height: 600);
+        if (pdfImage != null) {
+          final uiImage = await pdfImage.createImage();
+          final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
+          if (byteData != null) {
+            final bytes = byteData.buffer.asUint8List();
+            final coverFile = File('${file.path}.cover.png');
+            await coverFile.writeAsBytes(bytes);
+            coverPath = coverFile.path;
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors generating thumbnail
+      print('Failed to generate PDF thumbnail: $e');
+    }
+    
     final book = Book(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
       author: 'PDF Document',
       description: file.path, // Store file path in description for backward compatibility
       filePath: file.path,
+      coverPath: coverPath,
       publisher: 'Unknown',
       format: BookFormat.pdf,
       totalChapters: 1,

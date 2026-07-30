@@ -65,10 +65,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   final GlobalKey<PageTurnWidgetState> _pageTurnKey = GlobalKey<PageTurnWidgetState>();
   
   bool _isLoadingStructuredDoc = false;
+  
+  late final BookRepository _repo;
+  late final PreferencesRepository _prefsRepo;
 
   @override
   void initState() {
     super.initState();
+    _repo = ref.read(bookRepositoryProvider);
+    _prefsRepo = ref.read(preferencesRepositoryProvider);
+    
     _currentChapter = widget.startChapter;
     _currentPage = widget.startPage;
     _controlsAnimation = AnimationController(
@@ -161,7 +167,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   void _saveProgress() {
-    final repo = ref.read(bookRepositoryProvider);
+    final repo = _repo;
+    final prefsRepo = _prefsRepo;
     final chapters = repo.getChapters(widget.bookId);
     if (chapters.isEmpty) return;
 
@@ -175,7 +182,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final totalPages = _paginatedChapter?.pageCount ?? 1;
     final pagePosition = totalPages > 0 ? (_currentPage / totalPages).clamp(0.0, 1.0) : 0.0;
 
-    final overallPercent = _calculateProgress(chapters, ref.read(preferencesRepositoryProvider).settings);
+    final overallPercent = _calculateProgress(chapters, prefsRepo.settings);
 
     repo.updateProgress(progress.copyWith(
       currentChapter: _currentChapter,
@@ -1238,6 +1245,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         readingTheme: readingTheme,
         initialPage: _currentPage,
         onCenterTap: _toggleControls,
+        onWordLookup: _lookupWord,
         onPageChanged: (page, totalPages) {
           setState(() {
             _currentPage = page;

@@ -244,9 +244,9 @@ class LibraryScreen extends ConsumerWidget {
                 ),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: gridColumns,
-                  childAspectRatio: gridColumns >= 4 ? 0.46 : (gridColumns == 3 ? 0.50 : 0.54),
+                  childAspectRatio: gridColumns >= 5 ? 0.42 : (gridColumns == 4 ? 0.46 : (gridColumns == 3 ? 0.50 : 0.55)),
                   crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
+                  mainAxisSpacing: 12,
                 ),
               ),
             )
@@ -510,13 +510,18 @@ class _BookGridCard extends StatelessWidget {
           Expanded(
             child: Stack(
               children: [
-                BookCoverWidget(
-                  title: book.title,
-                  author: book.author,
-                  bookId: book.id,
-                  coverPath: book.coverPath,
-                  progress: bookWithProgress.progressPercent,
-                  width: double.infinity,
+                Center(
+                  child: AspectRatio(
+                    aspectRatio: 0.67,
+                    child: BookCoverWidget(
+                      title: book.title,
+                      author: book.author,
+                      bookId: book.id,
+                      coverPath: book.coverPath,
+                      progress: bookWithProgress.progressPercent,
+                      width: double.infinity,
+                    ),
+                  ),
                 ),
                 // Status badge
                 if (book.status == BookStatus.completed)

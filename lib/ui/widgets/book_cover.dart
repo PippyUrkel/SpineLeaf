@@ -41,8 +41,8 @@ class BookCoverWidget extends StatelessWidget {
       // Type 1: Check if cover image file exists
       baseCover = _buildImageCover(Image.file(File(coverPath!), fit: BoxFit.cover), computedHeight);
     } else {
-      // Type 2: Default stylized cover page
-      baseCover = _buildDefaultStylizedCover(context, computedHeight);
+      // Type 2: Default asset PNG cover
+      baseCover = _buildDefaultAssetCover(computedHeight);
     }
 
     // Wrap base cover with cover-based wavy liquid progress overlay
@@ -117,125 +117,15 @@ class BookCoverWidget extends StatelessWidget {
     );
   }
 
-  /// Builds a Type 2 default cover page using book metadata and vibrant gradients.
-  Widget _buildDefaultStylizedCover(BuildContext context, double? computedHeight) {
-    final coverColors = _getCoverColors(bookId);
-
-    return Container(
-      width: width,
-      height: computedHeight,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: coverColors,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: coverColors.first.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(2, 4),
-          ),
-        ],
+  /// Builds a Type 2 default cover using pre-rendered PNG cover assets.
+  Widget _buildDefaultAssetCover(double? computedHeight) {
+    final coverIndex = (bookId.hashCode.abs() % 5) + 1;
+    return _buildImageCover(
+      Image.asset(
+        'assets/covers/cover_$coverIndex.png',
+        fit: BoxFit.cover,
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          // Decorative pattern
-          Positioned(
-            top: -20,
-            right: -20,
-            child: Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.1),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -30,
-            left: -20,
-            child: Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
-            ),
-          ),
-          // Spine line
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: Container(
-              width: 4,
-              color: Colors.black.withValues(alpha: 0.15),
-            ),
-          ),
-          // Content
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 16, 10, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 24,
-                  height: 2,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-                const Spacer(flex: 1),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: width != null && width! < 80 ? 10 : 13,
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
-                    letterSpacing: 0.2,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                  maxLines: width != null && width! < 80 ? 2 : 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  author,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: width != null && width! < 80 ? 8 : 10,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 0.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const Spacer(flex: 2),
-                Container(
-                  width: 16,
-                  height: 2,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      computedHeight,
     );
   }
 
