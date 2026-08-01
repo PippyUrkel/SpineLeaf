@@ -1,7 +1,12 @@
 import 'dart:io';
-import 'package:epubx/epubx.dart';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
+import 'package:pdfrx/pdfrx.dart';
 import '../../core/constants.dart';
 import '../../data/models/models.dart';
+import 'epub_parser.dart';
+import 'rtf_parser.dart';
+
 /// Represents a parsed book result
 class ParsedBook {
   final Book book;
@@ -15,60 +20,85 @@ abstract class DocumentParser {
   Future<ParsedBook> parse(File file);
 }
 
-/// EPUB format parser
+/// EPUB format parser (delegates to StructuredEpubParser for consistency)
 class EpubParser implements DocumentParser {
   @override
   Future<ParsedBook> parse(File file) async {
-    final bytes = await file.readAsBytes();
-    final epubBook = await EpubReader.readBook(bytes);
+    final structuredParser = StructuredEpubParser();
+    final result = await structuredParser.parse(file);
+    return ParsedBook(result.book, result.chapters);
+  }
+}
 
-    final String title = epubBook.Title ?? 'Unknown Title';
-    final String author = epubBook.Author ?? 'Unknown Author';
+/// RTF format parser
+class RtfParserAdapter implements DocumentParser {
+  @override
+  Future<ParsedBook> parse(File file) async {
+    final rtfParser = RtfParser();
+    final result = await rtfParser.parse(file);
+    return ParsedBook(result.book, result.chapters);
+  }
+}
+
+/// PDF format parser
+class PdfParser implements DocumentParser {
+  @override
+  Future<ParsedBook> parse(File file) async {
+    final title = file.uri.pathSegments.last.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
+    
+    // Generate cover from first page
+    String? coverPath;
+    try {
+      final doc = await PdfDocument.openFile(file.path);
+      if (doc.pages.isNotEmpty) {
+        final page = doc.pages[0];
+        // Render at a decent resolution for thumbnails while maintaining aspect ratio
+        final aspectRatio = page.width / page.height;
+        final targetWidth = 400.0;
+        final targetHeight = targetWidth / aspectRatio;
+        
+        final pdfImage = await page.render(width: targetWidth.toInt(), height: targetHeight.toInt());
+        if (pdfImage != null) {
+          final uiImage = await pdfImage.createImage();
+          final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
+          if (byteData != null) {
+            final bytes = byteData.buffer.asUint8List();
+            final coverFile = File('${file.path}.cover.png');
+            await coverFile.writeAsBytes(bytes);
+            coverPath = coverFile.path;
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors generating thumbnail
+      debugPrint('Failed to generate PDF thumbnail: $e');
+    }
     
     final book = Book(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
-      author: author,
-      description: 'Imported EPUB book.',
+      author: 'PDF Document',
+      description: file.path, // Store file path in description for backward compatibility
+      filePath: file.path,
+      coverPath: coverPath,
       publisher: 'Unknown',
-      format: BookFormat.epub,
-      totalChapters: epubBook.Chapters?.length ?? 0,
+      format: BookFormat.pdf,
+      totalChapters: 1,
       dateAdded: DateTime.now(),
       status: BookStatus.unread,
       totalWords: 0,
     );
 
-    final List<Chapter> chapters = [];
-    int totalWords = 0;
-
-    if (epubBook.Chapters != null) {
-      for (int i = 0; i < epubBook.Chapters!.length; i++) {
-        final chapter = epubBook.Chapters![i];
-        final content = _stripHtml(chapter.HtmlContent ?? '');
-        final wordCount = content.split(RegExp(r'\s+')).length;
-        totalWords += wordCount;
-
-        chapters.add(Chapter(
-          id: '${book.id}_ch_$i',
-          bookId: book.id,
-          title: chapter.Title ?? 'Chapter ${i + 1}',
-          index: i,
-          content: content,
-          wordCount: wordCount,
-        ));
-      }
-    }
-
-    return ParsedBook(
-      book.copyWith(totalWords: totalWords, totalChapters: chapters.length),
-      chapters,
+    final chapter = Chapter(
+      id: '${book.id}_ch_0',
+      bookId: book.id,
+      title: title,
+      index: 0,
+      content: 'PDF Document Content',
+      wordCount: 0,
     );
-  }
 
-  String _stripHtml(String htmlString) {
-    // Basic HTML stripping for demo purposes
-    final regExp = RegExp(r'<[^>]*>', multiLine: true, caseSensitive: true);
-    return htmlString.replaceAll(regExp, '').replaceAll('&nbsp;', ' ').trim();
+    return ParsedBook(book, [chapter]);
   }
 }
 
@@ -77,19 +107,20 @@ class TxtParser implements DocumentParser {
   @override
   Future<ParsedBook> parse(File file) async {
     final content = await file.readAsString();
-    final String title = file.uri.pathSegments.last.replaceAll('.txt', '');
-    
+    final String title = file.uri.pathSegments.last.replaceAll(RegExp(r'\.(txt|md)$', caseSensitive: false), '');
+    final wordCount = content.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+
     final book = Book(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
       author: 'Unknown Author',
-      description: 'Imported TXT document.',
+      description: 'Imported text document.',
       publisher: 'Unknown',
       format: BookFormat.txt,
       totalChapters: 1,
       dateAdded: DateTime.now(),
       status: BookStatus.unread,
-      totalWords: content.split(RegExp(r'\s+')).length,
+      totalWords: wordCount,
     );
 
     final chapter = Chapter(
@@ -98,7 +129,7 @@ class TxtParser implements DocumentParser {
       title: 'Full Text',
       index: 0,
       content: content,
-      wordCount: book.totalWords,
+      wordCount: wordCount,
     );
 
     return ParsedBook(book, [chapter]);

@@ -32,7 +32,12 @@ class _SpineLeafAppState extends ConsumerState<SpineLeafApp> {
     final prefsRepo = ref.read(preferencesRepositoryProvider);
 
     await prefsRepo.load();
-    DemoDataService.seedDemoData(repo);
+    await repo.load();
+
+    if (!prefsRepo.hasSeededWelcomeBooklet) {
+      DemoDataService.seedWelcomeBooklet(repo);
+      await prefsRepo.saveWelcomeBookletSeeded(true);
+    }
 
     ref.read(themeModeProvider.notifier).state = prefsRepo.themeMode;
     ref.read(seedColorProvider.notifier).state = prefsRepo.seedColor;
@@ -70,6 +75,7 @@ class _SpineLeafAppState extends ConsumerState<SpineLeafApp> {
               builder: (_) => ReaderScreen(
                 bookId: args['bookId'] as String,
                 startChapter: args['startChapter'] as int? ?? 0,
+                startPage: args['startPage'] as int? ?? 0,
               ),
             );
           case '/book-details':

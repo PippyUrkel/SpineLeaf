@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants.dart';
 import '../../core/extensions.dart';
-import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
-import '../../data/services/ai_summary_service.dart';
 import '../widgets/book_cover.dart';
 
 class BookDetailsScreen extends ConsumerStatefulWidget {
@@ -19,19 +17,64 @@ class BookDetailsScreen extends ConsumerStatefulWidget {
 class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final Map<int, ChapterSummary> _summaries = {};
-  bool _generatingSummary = false;
+  bool _isSelectionMode = false;
+  final Set<int> _selectedChapterIndices = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _toggleChapterSelection(int index) {
+    setState(() {
+      if (_selectedChapterIndices.contains(index)) {
+        _selectedChapterIndices.remove(index);
+        if (_selectedChapterIndices.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedChapterIndices.add(index);
+      }
+    });
+  }
+
+  void _startSelectionMode(int index) {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedChapterIndices.add(index);
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedChapterIndices.clear();
+      _isSelectionMode = false;
+    });
+  }
+
+  void _selectAll(int totalChapters) {
+    setState(() {
+      _selectedChapterIndices.addAll(List.generate(totalChapters, (i) => i));
+    });
+  }
+
+  void _batchMarkRead() {
+    final repo = ref.read(bookRepositoryProvider);
+    repo.markChaptersRead(widget.bookId, _selectedChapterIndices);
+    _clearSelection();
+  }
+
+  void _batchMarkUnread() {
+    final repo = ref.read(bookRepositoryProvider);
+    repo.markChaptersUnread(widget.bookId, _selectedChapterIndices);
+    _clearSelection();
   }
 
   @override
@@ -50,592 +93,480 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen>
     final bookmarks = repo.getBookmarks(widget.bookId);
     final highlights = repo.getHighlights(widget.bookId);
     final notes = repo.getNotes(widget.bookId);
+    final allAnnotations = [...bookmarks, ...highlights, ...notes]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final hasStarted = progress.overallPercent > 0;
+    final theme = Theme.of(context);
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+
+      // Floating "▶ Resume" action button (hidden in selection mode)
+      floatingActionButton: _isSelectionMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.pushNamed(context, '/reader', arguments: {
+                  'bookId': widget.bookId,
+                  'startChapter': progress.currentChapter,
+                  'startPage': progress.positionInChapter.toInt(),
+                }).then((_) => setState(() {}));
+              },
+              backgroundColor: theme.colorScheme.primaryContainer,
+              foregroundColor: theme.colorScheme.onPrimaryContainer,
+              elevation: 4,
+              icon: Icon(hasStarted ? Icons.play_arrow_rounded : Icons.menu_book_rounded),
+              label: Text(
+                hasStarted ? 'Resume' : 'Start',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+            ),
+
+      // Bottom Batch Selection Bar (Matching second screenshot)
+      bottomNavigationBar: _isSelectionMode
+          ? SafeArea(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.done_all),
+                      tooltip: 'Mark Selected as Read',
+                      onPressed: _selectedChapterIndices.isNotEmpty ? _batchMarkRead : null,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.remove_done),
+                      tooltip: 'Mark Selected as Unread',
+                      onPressed: _selectedChapterIndices.isNotEmpty ? _batchMarkUnread : null,
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _selectedChapterIndices.length == chapters.length
+                            ? Icons.deselect
+                            : Icons.select_all,
+                      ),
+                      tooltip: _selectedChapterIndices.length == chapters.length
+                          ? 'Deselect All'
+                          : 'Select All',
+                      onPressed: () {
+                        if (_selectedChapterIndices.length == chapters.length) {
+                          _clearSelection();
+                        } else {
+                          _selectAll(chapters.length);
+                        }
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Cancel Selection',
+                      onPressed: _clearSelection,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
+
       body: NestedScrollView(
         headerSliverBuilder: (context, _) => [
+          // Sleek Darkened Multiplied Gradient Header
           SliverAppBar(
-            expandedHeight: 280,
+            expandedHeight: 220,
             pinned: true,
+            backgroundColor: theme.colorScheme.surface,
+            title: _isSelectionMode
+                ? Text('${_selectedChapterIndices.length} selected')
+                : null,
+            leading: _isSelectionMode
+                ? IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: _clearSelection,
+                  )
+                : null,
             flexibleSpace: FlexibleSpaceBar(
-              background: _BookHeader(book: book, progress: progress),
-            ),
-            actions: [
-              PopupMenuButton(
-                itemBuilder: (context) => [
-                  if (book.status != BookStatus.completed)
-                    const PopupMenuItem(
-                      value: 'complete',
-                      child: Text('Mark as Completed'),
-                    ),
-                  if (book.status != BookStatus.unread)
-                    const PopupMenuItem(
-                      value: 'unread',
-                      child: Text('Mark as Unread'),
-                    ),
-                ],
-                onSelected: (value) {
-                  if (value == 'complete') {
-                    repo.setBookStatus(widget.bookId, BookStatus.completed);
-                  } else if (value == 'unread') {
-                    repo.setBookStatus(widget.bookId, BookStatus.unread);
-                  }
-                  setState(() {});
-                },
-              ),
-            ],
-          ),
-          // Action buttons
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
+              background: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/reader', arguments: {
-                          'bookId': widget.bookId,
-                          'startChapter': progress.currentChapter,
-                        });
-                      },
-                      icon: Icon(
-                        progress.overallPercent > 0
-                            ? Icons.play_arrow
-                            : Icons.menu_book,
-                      ),
-                      label: Text(
-                        progress.overallPercent > 0 ? 'Continue' : 'Start Reading',
+                  // Darkened Multiplied Cover Image Backdrop (Matching photo)
+                  if (book.coverPath != null)
+                    Image.asset(
+                      book.coverPath!,
+                      fit: BoxFit.cover,
+                      color: Colors.black.withValues(alpha: 0.75),
+                      colorBlendMode: BlendMode.multiply,
+                      errorBuilder: (_, __, ___) => const SizedBox(),
+                    ),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.4),
+                          theme.colorScheme.surface.withValues(alpha: 0.95),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton.tonalIcon(
-                    onPressed: () {
+
+                  // Header Info Row
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 48, 20, 16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          // Borderless Cover Thumbnail
+                          Hero(
+                            tag: 'cover_${book.id}',
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: BookCoverWidget(
+                                title: book.title,
+                                author: book.author,
+                                bookId: book.id,
+                                coverPath: book.coverPath,
+                                progress: progress.overallPercent,
+                                width: 84,
+                                height: 126,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+
+                          // Title, Author, Metadata
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  book.title,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color: Colors.white,
+                                    height: 1.25,
+                                  ),
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.person_outline,
+                                      size: 14,
+                                      color: Colors.white70,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        book.author,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: Colors.white70,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.schedule,
+                                      size: 13,
+                                      color: Colors.white60,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${book.format.label} • ${book.status.label}',
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: Colors.white60,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              if (!_isSelectionMode)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  itemBuilder: (context) => [
+                    if (book.status != BookStatus.completed)
+                      const PopupMenuItem(
+                        value: 'complete',
+                        child: ListTile(
+                          leading: Icon(Icons.check_circle_outline),
+                          title: Text('Mark as Completed'),
+                          dense: true,
+                        ),
+                      ),
+                    if (book.status != BookStatus.unread)
+                      const PopupMenuItem(
+                        value: 'unread',
+                        child: ListTile(
+                          leading: Icon(Icons.refresh),
+                          title: Text('Mark as Unread'),
+                          dense: true,
+                        ),
+                      ),
+                    const PopupMenuItem(
+                      value: 'rsvp',
+                      child: ListTile(
+                        leading: Icon(Icons.speed),
+                        title: Text('RSVP Speed Reading'),
+                        dense: true,
+                      ),
+                    ),
+                  ],
+                  onSelected: (value) {
+                    if (value == 'complete') {
+                      repo.setBookStatus(widget.bookId, BookStatus.completed);
+                    } else if (value == 'unread') {
+                      repo.setBookStatus(widget.bookId, BookStatus.unread);
+                    } else if (value == 'rsvp') {
                       Navigator.pushNamed(context, '/rsvp', arguments: {
                         'bookId': widget.bookId,
                         'chapterIndex': progress.currentChapter,
                       });
-                    },
-                    icon: const Icon(Icons.speed),
-                    label: const Text('RSVP'),
-                  ),
-                ],
+                    }
+                    setState(() {});
+                  },
+                ),
+            ],
+          ),
+
+          // Sub-Header Quick Action Bar
+          if (!_isSelectionMode)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _QuickActionButton(
+                      icon: book.status != BookStatus.unread ? Icons.favorite : Icons.favorite_border,
+                      label: 'In library',
+                      isActive: book.status != BookStatus.unread,
+                      onTap: () {
+                        final newStatus = book.status != BookStatus.unread ? BookStatus.unread : BookStatus.reading;
+                        repo.setBookStatus(widget.bookId, newStatus);
+                        setState(() {});
+                      },
+                    ),
+                    _QuickActionButton(
+                      icon: Icons.speed_rounded,
+                      label: 'RSVP',
+                      onTap: () {
+                        Navigator.pushNamed(context, '/rsvp', arguments: {
+                          'bookId': widget.bookId,
+                          'chapterIndex': progress.currentChapter,
+                        });
+                      },
+                    ),
+                    _QuickActionButton(
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'AI Summary',
+                      onTap: () {
+                        _tabController.animateTo(1);
+                      },
+                    ),
+                    _QuickActionButton(
+                      icon: Icons.bookmark_outline_rounded,
+                      label: 'Notes (${allAnnotations.length})',
+                      onTap: () {},
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          // Tab bar
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _SliverTabBarDelegate(
-              TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                tabs: [
-                  Tab(text: 'Chapters (${chapters.length})'),
-                  Tab(text: 'Bookmarks (${bookmarks.length})'),
-                  Tab(text: 'Highlights (${highlights.length})'),
-                  Tab(text: 'Notes (${notes.length})'),
-                  const Tab(text: 'AI Summary'),
+
+          // Minimal Section Header
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Text(
+                    book.format == BookFormat.pdf ? 'Document' : '${chapters.length} chapters',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (progress.overallPercent > 0)
+                    Text(
+                      '${progress.overallPercent.asPercent} read',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                 ],
               ),
-              context,
             ),
           ),
         ],
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            // Chapters
-            _ChapterList(
-              chapters: chapters,
-              progress: progress,
-              bookId: widget.bookId,
-            ),
-            // Bookmarks
-            _AnnotationList(
-              annotations: bookmarks,
-              emptyIcon: Icons.bookmark_outline,
-              emptyText: 'No bookmarks yet',
-              bookId: widget.bookId,
-            ),
-            // Highlights
-            _AnnotationList(
-              annotations: highlights,
-              emptyIcon: Icons.highlight_outlined,
-              emptyText: 'No highlights yet',
-              bookId: widget.bookId,
-            ),
-            // Notes
-            _AnnotationList(
-              annotations: notes,
-              emptyIcon: Icons.note_outlined,
-              emptyText: 'No notes yet',
-              bookId: widget.bookId,
-            ),
-            // AI Summary
-            _AiSummaryTab(
-              bookId: widget.bookId,
-              chapters: chapters,
-              progress: progress,
-              summaries: _summaries,
-              isGenerating: _generatingSummary,
-              onGenerate: (index) => _generateSummary(index, chapters),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Future<void> _generateSummary(int chapterIndex, List<Chapter> chapters) async {
-    if (_generatingSummary) return;
-    setState(() => _generatingSummary = true);
+        // Chapter List with Long Press Batch Selection Mode
+        body: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 80),
+          itemCount: chapters.length,
+          itemBuilder: (context, index) {
+            final chapter = chapters[index];
+            final isCompleted = progress.isChapterRead(index);
+            final isCurrent = index == progress.currentChapter;
+            final isSelected = _selectedChapterIndices.contains(index);
 
-    final aiService = ref.read(aiSummaryServiceProvider);
-    final chapter = chapters[chapterIndex];
-
-    final summary = await aiService.generateSummary(
-      widget.bookId,
-      chapterIndex,
-      chapter.title,
-      chapter.content,
-    );
-
-    setState(() {
-      _summaries[chapterIndex] = summary;
-      _generatingSummary = false;
-    });
-  }
-}
-
-class _BookHeader extends StatelessWidget {
-  final Book book;
-  final ReadingProgress progress;
-
-  const _BookHeader({required this.book, required this.progress});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            context.colorScheme.primaryContainer,
-            context.colorScheme.surface,
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 48, 16, 16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              BookCoverWidget(
-                title: book.title,
-                author: book.author,
-                bookId: book.id,
-                width: 100,
-                height: 150,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      book.title,
-                      style: context.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      book.author,
-                      style: context.textTheme.bodyMedium?.copyWith(
-                        color: context.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (book.publisher != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        book.publisher!,
-                        style: context.textTheme.bodySmall,
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    // Progress
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: progress.overallPercent,
-                              minHeight: 6,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          progress.overallPercent.asPercent,
-                          style: context.textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${book.totalChapters} chapters • ${book.status.label} • ${progress.totalReadingTime.formatted}',
-                      style: context.textTheme.labelSmall?.copyWith(
-                        color: context.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (book.description != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        book.description!,
-                        style: context.textTheme.bodySmall,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChapterList extends StatelessWidget {
-  final List<Chapter> chapters;
-  final ReadingProgress progress;
-  final String bookId;
-
-  const _ChapterList({
-    required this.chapters,
-    required this.progress,
-    required this.bookId,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8),
-      itemCount: chapters.length,
-      itemBuilder: (context, index) {
-        final chapter = chapters[index];
-        final isCompleted = index < progress.chaptersCompleted;
-        final isCurrent = index == progress.currentChapter;
-
-        return ListTile(
-          leading: CircleAvatar(
-            radius: 16,
-            backgroundColor: isCompleted
-                ? context.colorScheme.primary
-                : isCurrent
-                    ? context.colorScheme.primaryContainer
-                    : context.colorScheme.surfaceContainerHigh,
-            child: isCompleted
-                ? Icon(Icons.check, size: 16, color: context.colorScheme.onPrimary)
-                : Text(
-                    '${index + 1}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+            return ListTile(
+              selected: isSelected,
+              selectedTileColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.25),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              leading: _isSelectionMode
+                  ? Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => _toggleChapterSelection(index),
+                    )
+                  : Icon(
+                      Icons.circle,
+                      size: 8,
                       color: isCurrent
-                          ? context.colorScheme.onPrimaryContainer
-                          : context.colorScheme.onSurfaceVariant,
+                          ? theme.colorScheme.primary
+                          : isCompleted
+                              ? theme.colorScheme.onSurface.withValues(alpha: 0.3)
+                              : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
-                  ),
-          ),
-          title: Text(
-            chapter.title,
-            style: TextStyle(
-              fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-          subtitle: Text('${chapter.wordCount} words'),
-          trailing: isCurrent
-              ? Chip(
-                  label: const Text('Current'),
-                  visualDensity: VisualDensity.compact,
-                  labelStyle: const TextStyle(fontSize: 11),
-                )
-              : null,
-          onTap: () {
-            Navigator.pushNamed(context, '/reader', arguments: {
-              'bookId': bookId,
-              'startChapter': index,
-            });
+              title: Text(
+                book.format == BookFormat.pdf ? 'Full Document' : 'Chapter ${index + 1}: ${chapter.title}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                  color: isCompleted
+                      ? theme.colorScheme.onSurface.withValues(alpha: 0.6)
+                      : theme.colorScheme.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: isCurrent && progress.positionInChapter > 0
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Page ${(progress.positionInChapter + 1).toInt()}',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    )
+                  : null,
+              trailing: _isSelectionMode
+                  ? null
+                  : isCompleted
+                      ? Icon(
+                          Icons.check_circle_rounded,
+                          size: 18,
+                          color: theme.colorScheme.primary.withValues(alpha: 0.6),
+                        )
+                      : isCurrent
+                          ? Icon(
+                              Icons.play_circle_fill_rounded,
+                              size: 20,
+                              color: theme.colorScheme.primary,
+                            )
+                          : null,
+              onTap: () {
+                if (_isSelectionMode) {
+                  _toggleChapterSelection(index);
+                } else {
+                  Navigator.pushNamed(context, '/reader', arguments: {
+                    'bookId': widget.bookId,
+                    'startChapter': index,
+                  }).then((_) => setState(() {}));
+                }
+              },
+              onLongPress: () {
+                if (!_isSelectionMode) {
+                  _startSelectionMode(index);
+                } else {
+                  _toggleChapterSelection(index);
+                }
+              },
+            );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
-class _AnnotationList extends StatelessWidget {
-  final List<Annotation> annotations;
-  final IconData emptyIcon;
-  final String emptyText;
-  final String bookId;
+// ─── Minimal Action Icon Button ────────────────────────────────────────
 
-  const _AnnotationList({
-    required this.annotations,
-    required this.emptyIcon,
-    required this.emptyText,
-    required this.bookId,
+class _QuickActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _QuickActionButton({
+    required this.icon,
+    required this.label,
+    this.isActive = false,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (annotations.isEmpty) {
-      return Center(
+    final theme = Theme.of(context);
+    final color = isActive ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(emptyIcon, size: 48, color: context.colorScheme.outline),
-            const SizedBox(height: 12),
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 4),
             Text(
-              emptyText,
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: context.colorScheme.outline,
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontSize: 11,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
             ),
           ],
         ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8),
-      itemCount: annotations.length,
-      itemBuilder: (context, index) {
-        final annotation = annotations[index];
-
-        return ListTile(
-          leading: Icon(
-            annotation.type == AnnotationType.bookmark
-                ? Icons.bookmark
-                : annotation.type == AnnotationType.highlight
-                    ? Icons.highlight
-                    : Icons.note,
-            color: annotation.highlightColor ?? context.colorScheme.primary,
-          ),
-          title: Text(
-            annotation.selectedText ?? 'Chapter ${annotation.chapterIndex + 1}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (annotation.note != null)
-                Text(
-                  annotation.note!,
-                  style: context.textTheme.bodySmall?.copyWith(
-                    fontStyle: FontStyle.italic,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              Text(
-                'Ch. ${annotation.chapterIndex + 1} • ${annotation.createdAt.relativeTime}',
-                style: context.textTheme.labelSmall,
-              ),
-            ],
-          ),
-          onTap: () {
-            Navigator.pushNamed(context, '/reader', arguments: {
-              'bookId': bookId,
-              'startChapter': annotation.chapterIndex,
-            });
-          },
-        );
-      },
+      ),
     );
   }
-}
-
-class _AiSummaryTab extends StatelessWidget {
-  final String bookId;
-  final List<Chapter> chapters;
-  final ReadingProgress progress;
-  final Map<int, ChapterSummary> summaries;
-  final bool isGenerating;
-  final Function(int) onGenerate;
-
-  const _AiSummaryTab({
-    required this.bookId,
-    required this.chapters,
-    required this.progress,
-    required this.summaries,
-    required this.isGenerating,
-    required this.onGenerate,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Only show chapters the user has read
-    final readChapters = chapters.where((c) => c.index < progress.chaptersCompleted).toList();
-
-    if (readChapters.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.auto_awesome, size: 48, color: context.colorScheme.outline),
-              const SizedBox(height: 16),
-              Text(
-                'AI Summaries',
-                style: context.textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Start reading to unlock AI-generated chapter summaries. '
-                'Only chapters you\'ve already read will be summarized to avoid spoilers.',
-                textAlign: TextAlign.center,
-                style: context.textTheme.bodySmall,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: readChapters.length,
-      itemBuilder: (context, index) {
-        final chapter = readChapters[index];
-        final summary = summaries[chapter.index];
-
-        if (summary == null) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Ch. ${chapter.index + 1}: ${chapter.title}',
-                    style: context.textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.tonalIcon(
-                      onPressed: isGenerating ? null : () => onGenerate(chapter.index),
-                      icon: isGenerating
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(isGenerating ? 'Generating...' : 'Generate Summary'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.auto_awesome, size: 16, color: context.colorScheme.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Ch. ${chapter.index + 1}: ${chapter.title}',
-                        style: context.textTheme.titleSmall,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(summary.summary, style: context.textTheme.bodyMedium),
-                if (summary.keyPoints.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text('Key Points', style: context.textTheme.labelLarge),
-                  const SizedBox(height: 4),
-                  ...summary.keyPoints.map((point) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('• ', style: TextStyle(color: context.colorScheme.primary)),
-                        Expanded(child: Text(point, style: context.textTheme.bodySmall)),
-                      ],
-                    ),
-                  )),
-                ],
-                if (summary.characters.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: summary.characters.map((name) => Chip(
-                      avatar: const Icon(Icons.person, size: 14),
-                      label: Text(name),
-                      visualDensity: VisualDensity.compact,
-                      labelStyle: const TextStyle(fontSize: 11),
-                    )).toList(),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
-  final TabBar tabBar;
-  final BuildContext context;
-
-  _SliverTabBarDelegate(this.tabBar, this.context);
-
-  @override
-  double get minExtent => tabBar.preferredSize.height;
-
-  @override
-  double get maxExtent => tabBar.preferredSize.height;
-
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: tabBar,
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant _SliverTabBarDelegate oldDelegate) => false;
 }

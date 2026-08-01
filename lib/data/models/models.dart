@@ -71,6 +71,44 @@ class Book {
       totalWords: totalWords ?? this.totalWords,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'author': author,
+    'description': description,
+    'publisher': publisher,
+    'isbn': isbn,
+    'filePath': filePath,
+    'coverPath': coverPath,
+    'format': format.index,
+    'totalChapters': totalChapters,
+    'dateAdded': dateAdded.toIso8601String(),
+    'lastOpened': lastOpened?.toIso8601String(),
+    'status': status.index,
+    'fileHash': fileHash,
+    'totalWords': totalWords,
+  };
+
+  factory Book.fromJson(Map<String, dynamic> json) {
+    return Book(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      author: json['author'] as String,
+      description: json['description'] as String?,
+      publisher: json['publisher'] as String?,
+      isbn: json['isbn'] as String?,
+      filePath: json['filePath'] as String?,
+      coverPath: json['coverPath'] as String?,
+      format: BookFormat.values[(json['format'] as int? ?? 0).clamp(0, BookFormat.values.length - 1)],
+      totalChapters: json['totalChapters'] as int? ?? 0,
+      dateAdded: DateTime.tryParse(json['dateAdded'] as String? ?? '') ?? DateTime.now(),
+      lastOpened: json['lastOpened'] != null ? DateTime.tryParse(json['lastOpened'] as String) : null,
+      status: BookStatus.values[(json['status'] as int? ?? 0).clamp(0, BookStatus.values.length - 1)],
+      fileHash: json['fileHash'] as String?,
+      totalWords: json['totalWords'] as int? ?? 0,
+    );
+  }
 }
 
 class Chapter {
@@ -89,6 +127,26 @@ class Chapter {
     required this.content,
     this.wordCount = 0,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'bookId': bookId,
+    'title': title,
+    'index': index,
+    'content': content,
+    'wordCount': wordCount,
+  };
+
+  factory Chapter.fromJson(Map<String, dynamic> json) {
+    return Chapter(
+      id: json['id'] as String? ?? '',
+      bookId: json['bookId'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      index: json['index'] as int? ?? 0,
+      content: json['content'] as String? ?? '',
+      wordCount: json['wordCount'] as int? ?? 0,
+    );
+  }
 }
 
 class ReadingProgress {
@@ -97,6 +155,7 @@ class ReadingProgress {
   final double positionInChapter;
   final double overallPercent;
   final int chaptersCompleted;
+  final Set<int> readChapterIndices;
   final int totalReadingTimeSeconds;
   final DateTime? lastReadAt;
 
@@ -106,9 +165,14 @@ class ReadingProgress {
     this.positionInChapter = 0.0,
     this.overallPercent = 0.0,
     this.chaptersCompleted = 0,
+    this.readChapterIndices = const {},
     this.totalReadingTimeSeconds = 0,
     this.lastReadAt,
   });
+
+  bool isChapterRead(int chapterIndex) {
+    return readChapterIndices.contains(chapterIndex) || chapterIndex < chaptersCompleted;
+  }
 
   ReadingProgress copyWith({
     String? bookId,
@@ -116,6 +180,7 @@ class ReadingProgress {
     double? positionInChapter,
     double? overallPercent,
     int? chaptersCompleted,
+    Set<int>? readChapterIndices,
     int? totalReadingTimeSeconds,
     DateTime? lastReadAt,
   }) {
@@ -125,8 +190,33 @@ class ReadingProgress {
       positionInChapter: positionInChapter ?? this.positionInChapter,
       overallPercent: overallPercent ?? this.overallPercent,
       chaptersCompleted: chaptersCompleted ?? this.chaptersCompleted,
+      readChapterIndices: readChapterIndices ?? this.readChapterIndices,
       totalReadingTimeSeconds: totalReadingTimeSeconds ?? this.totalReadingTimeSeconds,
       lastReadAt: lastReadAt ?? this.lastReadAt,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'bookId': bookId,
+    'currentChapter': currentChapter,
+    'positionInChapter': positionInChapter,
+    'overallPercent': overallPercent,
+    'chaptersCompleted': chaptersCompleted,
+    'readChapterIndices': readChapterIndices.toList(),
+    'totalReadingTimeSeconds': totalReadingTimeSeconds,
+    'lastReadAt': lastReadAt?.toIso8601String(),
+  };
+
+  factory ReadingProgress.fromJson(Map<String, dynamic> json) {
+    return ReadingProgress(
+      bookId: json['bookId'] as String? ?? '',
+      currentChapter: json['currentChapter'] as int? ?? 0,
+      positionInChapter: (json['positionInChapter'] as num?)?.toDouble() ?? 0.0,
+      overallPercent: (json['overallPercent'] as num?)?.toDouble() ?? 0.0,
+      chaptersCompleted: json['chaptersCompleted'] as int? ?? 0,
+      readChapterIndices: (json['readChapterIndices'] as List<dynamic>?)?.cast<int>().toSet() ?? const {},
+      totalReadingTimeSeconds: json['totalReadingTimeSeconds'] as int? ?? 0,
+      lastReadAt: json['lastReadAt'] != null ? DateTime.tryParse(json['lastReadAt'] as String) : null,
     );
   }
 
@@ -155,6 +245,32 @@ class Annotation {
     this.position = 0,
     required this.createdAt,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'bookId': bookId,
+    'chapterIndex': chapterIndex,
+    'type': type.index,
+    'selectedText': selectedText,
+    'note': note,
+    'highlightColor': highlightColor?.toARGB32(),
+    'position': position,
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  factory Annotation.fromJson(Map<String, dynamic> json) {
+    return Annotation(
+      id: json['id'] as String? ?? '',
+      bookId: json['bookId'] as String? ?? '',
+      chapterIndex: json['chapterIndex'] as int? ?? 0,
+      type: AnnotationType.values[(json['type'] as int? ?? 0).clamp(0, AnnotationType.values.length - 1)],
+      selectedText: json['selectedText'] as String?,
+      note: json['note'] as String?,
+      highlightColor: json['highlightColor'] != null ? Color(json['highlightColor'] as int) : null,
+      position: json['position'] as int? ?? 0,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
 }
 
 class ReadingSession {
@@ -175,6 +291,28 @@ class ReadingSession {
     this.chaptersRead = 0,
     this.wordsRead = 0,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'bookId': bookId,
+    'startedAt': startedAt.toIso8601String(),
+    'endedAt': endedAt?.toIso8601String(),
+    'durationSeconds': durationSeconds,
+    'chaptersRead': chaptersRead,
+    'wordsRead': wordsRead,
+  };
+
+  factory ReadingSession.fromJson(Map<String, dynamic> json) {
+    return ReadingSession(
+      id: json['id'] as String? ?? '',
+      bookId: json['bookId'] as String? ?? '',
+      startedAt: DateTime.tryParse(json['startedAt'] as String? ?? '') ?? DateTime.now(),
+      endedAt: json['endedAt'] != null ? DateTime.tryParse(json['endedAt'] as String) : null,
+      durationSeconds: json['durationSeconds'] as int? ?? 0,
+      chaptersRead: json['chaptersRead'] as int? ?? 0,
+      wordsRead: json['wordsRead'] as int? ?? 0,
+    );
+  }
 
   Duration get duration => Duration(seconds: durationSeconds);
 }
@@ -199,7 +337,7 @@ class ReaderSettings {
     this.textAlign = ReaderTextAlign.left,
     this.margin = 24.0,
     this.readingTheme = ReadingTheme.light,
-    this.scrollMode = true,
+    this.scrollMode = false,
   });
 
   ReaderSettings copyWith({
@@ -239,16 +377,22 @@ class ReaderSettings {
   };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
+    final rawFontSize = (json['fontSize'] as num?)?.toDouble() ?? 18.0;
+    final rawLineHeight = (json['lineHeight'] as num?)?.toDouble() ?? 1.6;
+    final rawMargin = (json['margin'] as num?)?.toDouble() ?? 24.0;
+    final rawThemeIndex = json['readingTheme'] as int? ?? 0;
+    final rawAlignIndex = json['textAlign'] as int? ?? 0;
+
     return ReaderSettings(
       fontFamily: json['fontFamily'] as String? ?? 'Literata',
-      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 18.0,
+      fontSize: rawFontSize.clamp(kMinFontSize, kMaxFontSize),
       fontWeight: FontWeight.values.firstWhere((w) => w.value == (json['fontWeightIndex'] as int? ?? 400), orElse: () => FontWeight.w400),
-      lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.6,
+      lineHeight: rawLineHeight.clamp(kMinLineHeight, kMaxLineHeight),
       paragraphSpacing: (json['paragraphSpacing'] as num?)?.toDouble() ?? 12.0,
-      textAlign: ReaderTextAlign.values[json['textAlign'] as int? ?? 0],
-      margin: (json['margin'] as num?)?.toDouble() ?? 24.0,
-      readingTheme: ReadingTheme.values[json['readingTheme'] as int? ?? 0],
-      scrollMode: json['scrollMode'] as bool? ?? true,
+      textAlign: ReaderTextAlign.values[rawAlignIndex.clamp(0, ReaderTextAlign.values.length - 1)],
+      margin: rawMargin.clamp(kMinMargin, kMaxMargin),
+      readingTheme: ReadingTheme.values[rawThemeIndex.clamp(0, ReadingTheme.values.length - 1)],
+      scrollMode: json['scrollMode'] as bool? ?? false,
     );
   }
 }
@@ -320,11 +464,13 @@ class ChapterSummary {
 class DictionaryEntry {
   final String word;
   final String? pronunciation;
+  final String? phoneticAudioUrl;
   final List<DictionaryDefinition> definitions;
 
   const DictionaryEntry({
     required this.word,
     this.pronunciation,
+    this.phoneticAudioUrl,
     this.definitions = const [],
   });
 }
@@ -333,11 +479,15 @@ class DictionaryDefinition {
   final String partOfSpeech;
   final String definition;
   final String? example;
+  final List<String> synonyms;
+  final List<String> antonyms;
 
   const DictionaryDefinition({
     required this.partOfSpeech,
     required this.definition,
     this.example,
+    this.synonyms = const [],
+    this.antonyms = const [],
   });
 }
 

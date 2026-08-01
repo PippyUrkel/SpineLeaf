@@ -1,8 +1,11 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
+import '../../core/constants.dart';
 import '../../domain/parsers/document_parser.dart';
 import '../repositories/repositories.dart';
 
@@ -12,12 +15,14 @@ class ImportService {
 
   ImportService(this._bookRepository);
 
-  Future<void> importBook() async {
+  Future<void> importBook(BuildContext context) async {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: [
           'epub',
+          'pdf',
+          'rtf',
           'txt',
           'md',
         ],
@@ -40,6 +45,8 @@ class ImportService {
 
       final DocumentParser parser = switch (extension) {
         'epub' => EpubParser(),
+        'pdf' => PdfParser(),
+        'rtf' => RtfParserAdapter(),
         'txt' || 'md' => TxtParser(),
         _ => throw UnsupportedError(
             'Unsupported file format: ${extension ?? 'unknown'}',
@@ -47,15 +54,82 @@ class ImportService {
       };
 
       final file = File(path);
-      final parsedBook = await parser.parse(file);
 
-      _bookRepository.addBook(parsedBook.book);
+      // Copy source file to app's persistent documents directory
+      final appDir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${appDir.path}/books');
+      if (!await booksDir.exists()) {
+        await booksDir.create(recursive: true);
+      }
+
+      final ext = extension ?? 'bin';
+      final fileName = 'book_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final persistentFile = await file.copy('${booksDir.path}/$fileName');
+
+      final parsedBook = await parser.parse(persistentFile);
+
+      // Save persistent path on book model
+      var finalBook = parsedBook.book.copyWith(
+        filePath: persistentFile.path,
+      );
+
+      if (finalBook.format == BookFormat.pdf && context.mounted) {
+        String title = finalBook.title;
+        String author = finalBook.author == 'PDF Document' ? '' : finalBook.author;
+
+        final result = await showDialog<Map<String, String>>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Book Details'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    decoration: const InputDecoration(labelText: 'Title'),
+                    controller: TextEditingController(text: title)..selection = TextSelection.collapsed(offset: title.length),
+                    onChanged: (val) => title = val,
+                  ),
+                  TextField(
+                    decoration: const InputDecoration(labelText: 'Author'),
+                    controller: TextEditingController(text: author)..selection = TextSelection.collapsed(offset: author.length),
+                    onChanged: (val) => author = val,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, {'title': title, 'author': author}),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+
+        if (result == null) {
+          return; // User cancelled
+        }
+
+        if (result['title']?.isNotEmpty == true) {
+          finalBook = finalBook.copyWith(title: result['title']);
+        }
+        if (result['author']?.isNotEmpty == true) {
+          finalBook = finalBook.copyWith(author: result['author']);
+        }
+      }
+
+      _bookRepository.addBook(finalBook);
       _bookRepository.addChapters(
-        parsedBook.book.id,
+        finalBook.id,
         parsedBook.chapters,
       );
     } catch (e) {
-      // TODO: Replace with application logging/error handling.
       // ignore: avoid_print
       print('Error importing book: $e');
       rethrow;
