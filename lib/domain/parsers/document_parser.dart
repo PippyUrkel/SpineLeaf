@@ -52,8 +52,12 @@ class PdfParser implements DocumentParser {
       final doc = await PdfDocument.openFile(file.path);
       if (doc.pages.isNotEmpty) {
         final page = doc.pages[0];
-        // Render at a decent resolution for thumbnails
-        final pdfImage = await page.render(width: 400, height: 600);
+        // Render at a decent resolution for thumbnails while maintaining aspect ratio
+        final aspectRatio = page.width / page.height;
+        final targetWidth = 400.0;
+        final targetHeight = targetWidth / aspectRatio;
+        
+        final pdfImage = await page.render(width: targetWidth.toInt(), height: targetHeight.toInt());
         if (pdfImage != null) {
           final uiImage = await pdfImage.createImage();
           final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
