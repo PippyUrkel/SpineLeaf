@@ -185,9 +185,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final book = repo.getBook(widget.bookId);
     final isPdf = book?.format == BookFormat.pdf;
 
-    final pagePosition = isPdf
-        ? (_pdfTotalPages > 0 ? (_currentPage / _pdfTotalPages).clamp(0.0, 1.0) : 0.0)
-        : ((_paginatedChapter?.pageCount ?? 1) > 0 ? (_currentPage / (_paginatedChapter?.pageCount ?? 1)).clamp(0.0, 1.0) : 0.0);
+    final pagePosition = _currentPage.toDouble();
 
     final overallPercent = isPdf && _pdfTotalPages > 0
         ? (_currentPage / _pdfTotalPages).clamp(0.0, 1.0)

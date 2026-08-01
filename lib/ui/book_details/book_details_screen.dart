@@ -479,7 +479,7 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen>
                   ? Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        '${(progress.positionInChapter * 100).round()}% completed',
+                        'Page ${(progress.positionInChapter + 1).toInt()}',
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.primary,
                         ),

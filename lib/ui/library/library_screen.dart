@@ -278,10 +278,10 @@ class LibraryScreen extends ConsumerWidget {
     );
   }
 
-  void _showImportDialog(BuildContext context, WidgetRef ref) {
+  void _showImportDialog(BuildContext outerContext, WidgetRef ref) {
     showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
+      context: outerContext,
+      builder: (dialogContext) => AlertDialog(
         icon: const Icon(Icons.file_upload_outlined),
         title: const Text('Import Book'),
         content: const Text(
@@ -290,23 +290,23 @@ class LibraryScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Close'),
           ),
           FilledButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               try {
-                await ref.read(importServiceProvider).importBook();
+                await ref.read(importServiceProvider).importBook(outerContext);
                 ref.read(libraryRefreshProvider.notifier).state++;
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (outerContext.mounted) {
+                  ScaffoldMessenger.of(outerContext).showSnackBar(
                     const SnackBar(content: Text('Book imported successfully')),
                   );
                 }
               } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (outerContext.mounted) {
+                  ScaffoldMessenger.of(outerContext).showSnackBar(
                     SnackBar(content: Text('Error importing book: $e')),
                   );
                 }
