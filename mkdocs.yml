@@ -1,0 +1,43 @@
+site_name: SpineLeaf E-Book Reader
+site_description: Modern Flutter eBook reader
+site_author: PippyUrkel
+repo_url: https://github.com/PippyUrkel/SpineLeaf
+repo_name: SpineLeaf
+
+nav:
+  - Home: index.md
+  - Library & Management: features/library.md
+  - Reading Experience: features/reader.md
+  - RSVP Speed Reading: features/rsvp.md
+  - Statistics: features/statistics.md
+  - Settings & Customization: features/settings.md
+  - Installation: installation.md
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-2
+        name: Switch to light mode
+
+    - scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+markdown_extensions: 
+  - tables 
+  - fenced_code 
+  - codehilite 
+  - attr_list
+
+extra:
+  version: v0.0.1
+
+copyright: |
+  SpineLeaf • Version 0.0.1
