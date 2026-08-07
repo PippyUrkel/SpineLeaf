@@ -8,7 +8,7 @@
 
 ### A modern, customizable ebook reader for Android
 
-Read EPUB, PDF, MOBI, and more with an immersive reading experience, extensive customization, integrated productivity tools, and detailed reading insights.
+Read EPUB, PDF, TXT, RTF and with an immersive reading experience, extensive customization, integrated productivity tools, and detailed reading insights.
 
 <br>
 
@@ -28,7 +28,7 @@ Read EPUB, PDF, MOBI, and more with an immersive reading experience, extensive c
 -  Bookmark pages and continue exactly where you left off.
 -  Integrated dictionary for instant word definitions.
 -  Reading statistics including streaks, progress, and reading time.
--  Import EPUB, PDF, MOBI, and other supported formats.
+-  Import EPUB, PDF, TXT. RTF formats.
 -  Light, Dark, and customizable accent themes.
 
 ## Documentation
